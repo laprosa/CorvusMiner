@@ -1,0 +1,559 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Ubuntu Mono', monospace;
+}
+
+body {
+    font-family: 'Ubuntu Mono', monospace;
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+}
+
+.container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: row;
+}
+
+/* Navbar (Side Navigation) */
+.navbar {
+    background-color: #0d0d0d;
+    color: white;
+    padding: 2rem 0;
+    border-right: 2px solid #440000;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    width: 250px;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3);
+    position: relative;
+}
+
+.navbar-brand {
+    padding: 0 2rem;
+    border-bottom: 2px solid #440000;
+    padding-bottom: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.navbar-logo {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+}
+
+.navbar-brand h1 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #aa0000;
+}
+
+.navbar-menu {
+    display: flex;
+    flex-direction: column;
+    list-style: none;
+    gap: 0.5rem;
+    padding: 0 1rem;
+}
+
+.nav-link {
+    color: #e0e0e0;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 0.75rem 1rem;
+    border-left: 3px solid transparent;
+    transition: all 0.3s;
+    display: block;
+}
+
+.nav-link:hover {
+    background-color: rgba(170, 0, 0, 0.1);
+    border-left-color: #aa0000;
+    color: #aa0000;
+}
+
+.nav-link.active {
+    background-color: rgba(170, 0, 0, 0.15);
+    border-left-color: #aa0000;
+    color: #aa0000;
+}
+
+/* Logout Button */
+.logout-btn {
+    background-color: #aa0000;
+    color: white;
+    border: 2px solid #aa0000;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-size: 0.95rem;
+    margin: 0 1rem;
+}
+
+.logout-btn:hover {
+    background-color: transparent;
+    color: #aa0000;
+    box-shadow: 0 0 12px rgba(170, 0, 0, 0.3);
+}
+
+.sidebar-spacer {
+    flex: 1;
+}
+
+/* Main Content */
+.main-content {
+    flex: 1;
+    padding: 2rem;
+    overflow-y: auto;
+}
+
+/* Footer */
+.footer {
+    background-color: #0d0d0d;
+    color: #888;
+    text-align: center;
+    padding: 1.5rem;
+    border-top: 2px solid #440000;
+    font-size: 0.9rem;
+    width: 100%;
+}
+
+/* Dashboard */
+.dashboard {
+    background: transparent;
+    padding: 0;
+}
+
+.dashboard h2 {
+    margin-bottom: 2rem;
+    color: #aa0000;
+    font-size: 2rem;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background-color: #262626;
+    border: 2px solid #440000;
+    color: #e0e0e0;
+    padding: 2rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s;
+}
+
+.stat-card:hover {
+    border-color: #aa0000;
+    background-color: rgba(170, 0, 0, 0.05);
+    box-shadow: 0 6px 16px rgba(170, 0, 0, 0.2);
+}
+
+.stat-card h3 {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #888;
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #aa0000;
+}
+
+/* Miners Page */
+.miners-page,
+.config-page {
+    background-color: #262626;
+    padding: 2rem;
+    border: 2px solid #440000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.miners-page h2,
+.config-page h2 {
+    margin-bottom: 1.5rem;
+    color: #aa0000;
+    font-size: 1.5rem;
+}
+
+.miners-controls {
+    margin-bottom: 2rem;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.search-input {
+    flex: 1;
+    padding: 0.75rem;
+    border: 2px solid #333;
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+    font-size: 1rem;
+    transition: all 0.3s;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: #aa0000;
+    box-shadow: 0 0 8px rgba(170, 0, 0, 0.2);
+}
+
+/* Tables */
+.miners-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.miners-table thead {
+    background-color: #1a1a1a;
+    border-bottom: 2px solid #440000;
+}
+
+.miners-table th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: #aa0000;
+}
+
+.miners-table td {
+    padding: 1rem;
+    border-bottom: 1px solid #333;
+    color: #e0e0e0;
+}
+
+.miners-table tbody tr:hover {
+    background-color: rgba(74, 222, 128, 0.08);
+}
+
+/* Status Badge */
+.status {
+    display: inline-block;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+}
+
+.status.online {
+    background-color: rgba(170, 0, 0, 0.15);
+    color: #aa0000;
+    border-color: #aa0000;
+}
+
+.status.offline {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border-color: #ef4444;
+}
+
+.status.error {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border-color: #ef4444;
+}
+
+/* Buttons */
+.btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background-color: #aa0000;
+    color: white;
+    border: 2px solid #aa0000;
+}
+
+.btn-primary:hover {
+    background-color: transparent;
+    color: #aa0000;
+    box-shadow: 0 0 12px rgba(170, 0, 0, 0.3);
+}
+
+.btn-success {
+    background-color: #aa0000;
+    color: white;
+    border: 2px solid #aa0000;
+}
+
+.btn-success:hover {
+    background-color: transparent;
+    color: #aa0000;
+}
+
+.btn-danger {
+    background-color: #ef4444;
+    color: white;
+    border: 2px solid #ef4444;
+}
+
+.btn-danger:hover {
+    background-color: transparent;
+    color: #ef4444;
+}
+
+.btn-secondary {
+    background-color: transparent;
+    color: #888;
+    border: 2px solid #444;
+}
+
+.btn-secondary:hover {
+    background-color: transparent;
+    color: #e0e0e0;
+    border-color: #666;
+}
+
+.btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+
+/* Forms */
+.config-form,
+#minerForm {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    max-width: 600px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #e0e0e0;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group input[type="email"] {
+    padding: 0.75rem;
+    border: 2px solid #333;
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+    font-size: 1rem;
+    transition: all 0.3s;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #aa0000;
+    box-shadow: 0 0 8px rgba(170, 0, 0, 0.2);
+}
+
+.form-group small {
+    margin-top: 0.25rem;
+    color: #666;
+    font-size: 0.85rem;
+}
+
+.form-group.checkbox {
+    flex-direction: row;
+    align-items: center;
+}
+
+.form-group.checkbox label {
+    margin-bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.form-group.checkbox input {
+    width: auto;
+    margin: 0;
+}
+
+.form-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+/* Modal */
+.form-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.form-modal.hidden {
+    display: none;
+}
+
+.form-modal-content {
+    background: #262626;
+    padding: 2rem;
+    border: 2px solid #440000;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    max-width: 500px;
+    width: 90%;
+    position: relative;
+}
+
+.close-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #666;
+}
+
+.close-btn:hover {
+    color: #aa0000;
+}
+
+/* Preview */
+.miners-preview {
+    margin-top: 2rem;
+}
+
+.miners-preview h3 {
+    margin-bottom: 1rem;
+    color: #aa0000;
+    font-size: 1.2rem;
+}
+
+.empty-message {
+    text-align: center;
+    color: #666;
+    padding: 2rem;
+    background-color: #262626;
+    border: 2px solid #440000;
+}
+
+.empty-message a {
+    color: #aa0000;
+    text-decoration: none;
+}
+
+.empty-message a:hover {
+    text-decoration: underline;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+    }
+
+    .navbar {
+        flex-direction: row;
+        width: 100%;
+        border-right: none;
+        border-bottom: 2px solid #440000;
+        gap: 1rem;
+        padding: 1rem 2rem;
+    }
+
+    .navbar-brand {
+        padding: 0;
+        border-bottom: none;
+        border-right: 2px solid #440000;
+        padding-right: 2rem;
+        margin-right: 2rem;
+    }
+
+    .navbar-menu {
+        flex-direction: row;
+        gap: 1rem;
+        padding: 0;
+    }
+
+    .nav-link {
+        padding: 0.5rem 1rem;
+        border-left: none;
+        border-bottom: 2px solid transparent;
+    }
+
+    .nav-link:hover,
+    .nav-link.active {
+        border-left: none;
+        border-bottom-color: #4ade80;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .main-content {
+        padding: 1rem;
+    }
+
+    .miners-table {
+        font-size: 0.875rem;
+    }
+
+    .miners-table th,
+    .miners-table td {
+        padding: 0.75rem;
+    }
+
+    .form-actions {
+        flex-direction: column;
+    }
+
+    .form-actions .btn {
+        width: 100%;
+    }
+}
+
+/* Pagination */
+.pagination-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background-color: #262626;
+    border: 2px solid #440000;
+}
+
+.page-info {
+    color: #e0e0e0;
+    font-weight: 600;
+    min-width: 150px;
+    text-align: center;
+}
+
+.pagination-controls .btn {
+    min-width: 120px;
+}
+
+.pagination-controls .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

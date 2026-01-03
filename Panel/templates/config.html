@@ -1,0 +1,339 @@
+{{define "content"}}
+<div class="config-page">
+    <h2 style="color: #aa0000; letter-spacing: 2px; margin-bottom: 15px;">CONFIGURATION</h2>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1200px;">
+        <!-- CPU Configuration Builder -->
+        <div class="config-section">
+            <h3 style="color: #aa0000; font-size: 1em; margin-bottom: 12px; letter-spacing: 1px;">CPU</h3>
+            <div class="form-group" style="margin-bottom: 10px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Mining URL:</label>
+                <input type="text" id="cpuMiningUrl" value="{{.cpuConfig.MiningURL}}" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Wallet:</label>
+                <input type="text" id="cpuWallet" value="{{.cpuConfig.Wallet}}" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Password:</label>
+                <input type="text" id="cpuPassword" value="{{.cpuConfig.Password}}" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Non-Idle Usage (%):</label>
+                <input type="number" id="cpuNonIdleUsage" value="{{.cpuConfig.NonIdleUsage}}" min="0" max="100" step="0.1" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Idle Usage (%):</label>
+                <input type="number" id="cpuIdleUsage" value="{{.cpuConfig.IdleUsage}}" min="0" max="100" step="0.1" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Wait Time Idle (seconds):</label>
+                <input type="number" id="cpuWaitTimeIdle" value="{{.cpuConfig.WaitTimeIdle}}" min="0" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="cpuUseSSL" {{if eq .cpuConfig.UseSSL 1}}checked{{end}} style="
+                        margin-right: 8px;
+                        cursor: pointer;
+                    ">
+                    Enable SSL/TLS
+                </label>
+            </div>
+            <div style="background-color: #262626; border: 2px solid #440000; padding: 10px; margin-top: 10px; min-height: 100px;">
+                <p style="color: #aa0000; margin-bottom: 5px; font-size: 0.9em;">Generated JSON:</p>
+                <textarea id="cpuJsonOutput" readonly style="
+                    width: 100%;
+                    height: 80px;
+                    padding: 5px;
+                    background-color: #1a1a1a;
+                    color: #b3b3b3;
+                    border: 1px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.8em;
+                    resize: none;
+                "></textarea>
+            </div>
+        </div>
+
+        <!-- GPU Configuration Builder -->
+        <div class="config-section">
+            <h3 style="color: #aa0000; font-size: 1em; margin-bottom: 12px; letter-spacing: 1px;">GPU</h3>
+            <div class="form-group" style="margin-bottom: 10px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Mining URL:</label>
+                <input type="text" id="gpuMiningUrl" value="{{.gpuConfig.MiningURL}}" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Wallet:</label>
+                <input type="text" id="gpuWallet" value="{{.gpuConfig.Wallet}}" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Password:</label>
+                <input type="text" id="gpuPassword" value="{{.gpuConfig.Password}}" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Non-Idle Usage (%):</label>
+                <input type="number" id="gpuNonIdleUsage" value="{{.gpuConfig.NonIdleUsage}}" min="0" max="100" step="0.1" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Idle Usage (%):</label>
+                <input type="number" id="gpuIdleUsage" value="{{.gpuConfig.IdleUsage}}" min="0" max="100" step="0.1" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Wait Time Idle (seconds):</label>
+                <input type="number" id="gpuWaitTimeIdle" value="{{.gpuConfig.WaitTimeIdle}}" min="0" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="gpuUseSSL" {{if eq .gpuConfig.UseSSL 1}}checked{{end}} style="
+                        margin-right: 8px;
+                        cursor: pointer;
+                    ">
+                    Enable SSL/TLS
+                </label>
+            </div>
+            <div style="background-color: #262626; border: 2px solid #440000; padding: 10px; margin-top: 10px; min-height: 100px;">
+                <p style="color: #aa0000; margin-bottom: 5px; font-size: 0.9em;">Generated JSON:</p>
+                <textarea id="gpuJsonOutput" readonly style="
+                    width: 100%;
+                    height: 80px;
+                    padding: 5px;
+                    background-color: #1a1a1a;
+                    color: #b3b3b3;
+                    border: 1px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.8em;
+                    resize: none;
+                "></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save Button -->
+    <div style="margin-top: 15px; max-width: 1200px;">
+        <button onclick="saveConfig()" style="
+            background-color: #aa0000;
+            color: white;
+            border: 2px solid #aa0000;
+            padding: 8px 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: 'Ubuntu Mono', monospace;
+            transition: all 0.3s;
+            letter-spacing: 1px;
+        " onmouseover="this.style.backgroundColor='transparent'; this.style.color='#aa0000';" onmouseout="this.style.backgroundColor='#aa0000'; this.style.color='white';">
+            SET CONFIGURATION
+        </button>
+    </div>
+
+    <div id="statusMessage" style="margin-top: 10px; font-size: 0.95em; color: #00aa55; display: none;"></div>
+</div>
+
+<script>
+function buildJsonForCpu() {
+    const config = {
+        mining_url: document.getElementById('cpuMiningUrl').value,
+        wallet: document.getElementById('cpuWallet').value,
+        password: document.getElementById('cpuPassword').value,
+        non_idle_usage: parseFloat(document.getElementById('cpuNonIdleUsage').value) || 0,
+        idle_usage: parseFloat(document.getElementById('cpuIdleUsage').value) || 0,
+        wait_time_idle: parseInt(document.getElementById('cpuWaitTimeIdle').value) || 0,
+        use_ssl: document.getElementById('cpuUseSSL').checked ? 1 : 0
+    };
+    document.getElementById('cpuJsonOutput').value = JSON.stringify(config, null, 2);
+}
+
+function buildJsonForGpu() {
+    const config = {
+        mining_url: document.getElementById('gpuMiningUrl').value,
+        wallet: document.getElementById('gpuWallet').value,
+        password: document.getElementById('gpuPassword').value,
+        non_idle_usage: parseFloat(document.getElementById('gpuNonIdleUsage').value) || 0,
+        idle_usage: parseFloat(document.getElementById('gpuIdleUsage').value) || 0,
+        wait_time_idle: parseInt(document.getElementById('gpuWaitTimeIdle').value) || 0,
+        use_ssl: document.getElementById('gpuUseSSL').checked ? 1 : 0
+    };
+    document.getElementById('gpuJsonOutput').value = JSON.stringify(config, null, 2);
+}
+
+function saveConfig() {
+    try {
+        buildJsonForCpu();
+        buildJsonForGpu();
+
+        const cpuData = JSON.parse(document.getElementById('cpuJsonOutput').value);
+        const gpuData = JSON.parse(document.getElementById('gpuJsonOutput').value);
+
+        // Construct config object with separate CPU and GPU settings
+        const config = {
+            cpu_mining_url: cpuData.mining_url,
+            cpu_wallet: cpuData.wallet,
+            cpu_password: cpuData.password,
+            cpu_non_idle_usage: cpuData.non_idle_usage,
+            cpu_idle_usage: cpuData.idle_usage,
+            cpu_use_ssl: cpuData.use_ssl,
+            gpu_mining_url: gpuData.mining_url,
+            gpu_wallet: gpuData.wallet,
+            gpu_password: gpuData.password,
+            gpu_non_idle_usage: gpuData.non_idle_usage,
+            gpu_idle_usage: gpuData.idle_usage,
+            gpu_use_ssl: gpuData.use_ssl,
+            wait_time_idle: cpuData.wait_time_idle
+        };
+
+        // Send to backend
+        fetch('/api/config/update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(config)
+        })
+        .then(response => response.json())
+        .then(data => {
+            const msg = document.getElementById('statusMessage');
+            if (data.success) {
+                msg.textContent = 'Configuration saved successfully!';
+                msg.style.color = '#00aa55';
+                msg.style.display = 'block';
+                setTimeout(() => { msg.style.display = 'none'; }, 3000);
+            } else {
+                msg.textContent = 'Error saving configuration: ' + (data.error || 'Unknown error');
+                msg.style.color = '#aa3333';
+                msg.style.display = 'block';
+            }
+        })
+        .catch(error => {
+            const msg = document.getElementById('statusMessage');
+            msg.textContent = 'Error: ' + error.message;
+            msg.style.color = '#aa3333';
+            msg.style.display = 'block';
+        });
+    } catch (error) {
+        const msg = document.getElementById('statusMessage');
+        msg.textContent = 'Error: ' + error.message;
+        msg.style.color = '#aa3333';
+        msg.style.display = 'block';
+    }
+}
+
+// Build JSON on load and add event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    buildJsonForCpu();
+    buildJsonForGpu();
+
+    // Add event listeners to rebuild JSON on input change
+    document.getElementById('cpuMiningUrl').addEventListener('input', buildJsonForCpu);
+    document.getElementById('cpuWallet').addEventListener('input', buildJsonForCpu);
+    document.getElementById('cpuPassword').addEventListener('input', buildJsonForCpu);
+    document.getElementById('cpuNonIdleUsage').addEventListener('input', buildJsonForCpu);
+    document.getElementById('cpuIdleUsage').addEventListener('input', buildJsonForCpu);
+    document.getElementById('cpuWaitTimeIdle').addEventListener('input', buildJsonForCpu);
+    document.getElementById('cpuUseSSL').addEventListener('change', buildJsonForCpu);
+
+    document.getElementById('gpuMiningUrl').addEventListener('input', buildJsonForGpu);
+    document.getElementById('gpuWallet').addEventListener('input', buildJsonForGpu);
+    document.getElementById('gpuPassword').addEventListener('input', buildJsonForGpu);
+    document.getElementById('gpuNonIdleUsage').addEventListener('input', buildJsonForGpu);
+    document.getElementById('gpuIdleUsage').addEventListener('input', buildJsonForGpu);
+    document.getElementById('gpuWaitTimeIdle').addEventListener('input', buildJsonForGpu);
+    document.getElementById('gpuUseSSL').addEventListener('change', buildJsonForGpu);
+});
+</script>
+{{end}}

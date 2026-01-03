@@ -1,0 +1,2 @@
+#include "resources.h"
+EMBEDDED_EXE RCDATA "../resources/embedded.exe"

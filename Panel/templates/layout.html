@@ -1,0 +1,44 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CorvusMiner - Control Panel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <div class="navbar-brand">
+                <img src="/static/img/logo.jpg" alt="CorvusMiner Logo" class="navbar-logo">
+                <h1>CorvusMiner</h1>
+            </div>
+            <ul class="navbar-menu">
+                <li><a href="/" class="nav-link">Dashboard</a></li>
+                <li><a href="/miners" class="nav-link">Miners</a></li>
+                <li><a href="/config" class="nav-link">Configuration</a></li>
+                <li><a href="/builder" class="nav-link">Builder</a></li>
+            </ul>
+            <div class="sidebar-spacer"></div>
+            <button class="logout-btn" onclick="alert('Logout functionality coming soon!')">Logout</button>
+        </nav>
+
+        <div style="display: flex; flex-direction: column; flex: 1;">
+            <main class="main-content">
+                {{template "content" .}}
+            </main>
+
+            <footer class="footer">
+                <p>{{.quote}}</p>
+            </footer>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
+{{end}}
