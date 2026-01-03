@@ -27,14 +27,13 @@ Features
 - "Process watch" to pause mining if certain processes are detected running
     
 - On the fly configurations, to update when needed  
-    
-- XMRig Proxy Integration
+
 
 Installation
 ------------
 **Requirements:**
 
-- Nothing im goated
+- you will need various tools installed, please read the WIKI.
 
 
 ### Issues
