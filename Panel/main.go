@@ -43,6 +43,6 @@ func main() {
 		http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))).ServeHTTP(w, r)
 	}))
 
-	log.Println("Server running on http://localhost:8080")
+	log.Println("Server running on port 8080")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
 }

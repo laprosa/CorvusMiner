@@ -19,7 +19,7 @@ func init() {
 		logError("This builder only works on Linux. Use build.sh instead.")
 		os.Exit(1)
 	}
-	clientDir = "../Client"
+	clientDir = "./Client"
 	buildDir = filepath.Join(clientDir, "build")
 }
 

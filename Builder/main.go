@@ -28,8 +28,8 @@ var (
 
 func init() {
 	reader = bufio.NewReader(os.Stdin)
-	clientDir = "../Client"
-	buildDir = "../Client/build"
+	clientDir = "./Client"
+	buildDir = "./Client/build"
 }
 
 func main() {

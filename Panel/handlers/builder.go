@@ -40,10 +40,17 @@ func (h *Handler) BuildMiner(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Build request received: %+v", buildReq)
 
-	// Path to the builder executable (at top level)
+	// Path to the builder executable in parent directory
 	builderPath := "../builder"
-	if _, err := os.Stat(builderPath); os.IsNotExist(err) {
-		log.Printf("Builder not found at: %s", builderPath)
+	absBuilderPath, err := filepath.Abs(builderPath)
+	if err != nil {
+		log.Printf("Error resolving builder path: %v", err)
+		http.Error(w, "Error resolving builder path", http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := os.Stat(absBuilderPath); os.IsNotExist(err) {
+		log.Printf("Builder not found at: %s", absBuilderPath)
 		http.Error(w, "Builder executable not found", http.StatusInternalServerError)
 		return
 	}
@@ -84,9 +91,9 @@ func (h *Handler) BuildMiner(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "-persistence")
 	}
 
-	// Execute the builder
-	cmd := exec.Command(builderPath, args...)
-	cmd.Dir = "../Builder"
+	// Execute the builder from the parent directory so it can access Client/
+	cmd := exec.Command(absBuilderPath, args...)
+	cmd.Dir = filepath.Dir(absBuilderPath) // Run from CorvusMiner root directory
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
