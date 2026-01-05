@@ -16,7 +16,7 @@ CorvusMiner is an open source, silent crypto miner. The readme will detail featu
 Features
 -----------------------
 
- - Hidden CPU + GPU Mining  
+ - Hidden CPU Mining + GPU Mining coming in February  
 
 - SSL support
 
@@ -27,14 +27,13 @@ Features
 - "Process watch" to pause mining if certain processes are detected running
     
 - On the fly configurations, to update when needed  
-    
-- XMRig Proxy Integration
+
 
 Installation
 ------------
 **Requirements:**
 
-- Nothing im goated
+- you will need various tools installed, please read the WIKI.
 
 
 ### Issues
