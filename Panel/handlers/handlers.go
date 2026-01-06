@@ -453,20 +453,3 @@ func (h *Handler) MinerSubmit(w http.ResponseWriter, r *http.Request) {
 		report.PCUsername, report.DeviceHash, report.CPUName, report.CPUHashrate,
 		report.GPUName, report.GPUHashrate)
 }
-
-// BuilderPage renders the builder page
-func (h *Handler) BuilderPage(w http.ResponseWriter, r *http.Request) {
-	data := map[string]interface{}{
-		"quote": getRandomQuote(),
-	}
-
-	tmpl, err := template.ParseFiles("templates/layout.html", "templates/builder.html")
-	if err != nil {
-		log.Printf("Error parsing templates: %v", err)
-		http.Error(w, "Error loading template", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	tmpl.ExecuteTemplate(w, "layout", data)
-}

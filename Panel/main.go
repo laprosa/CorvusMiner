@@ -33,10 +33,6 @@ func main() {
 	http.HandleFunc("/config", h.AuthMiddleware(h.ConfigPage))
 	http.HandleFunc("/api/config/get", h.AuthMiddleware(h.GetConfig))
 	http.HandleFunc("/api/config/update", h.AuthMiddleware(h.UpdateConfig))
-	http.HandleFunc("/builder", h.AuthMiddleware(h.BuilderPage))
-	http.HandleFunc("/api/builder/build", h.AuthMiddleware(h.BuildMiner))
-	http.HandleFunc("/api/builder/list", h.AuthMiddleware(h.ListBuilds))
-	http.HandleFunc("/api/builder/delete", h.AuthMiddleware(h.DeleteBuild))
 
 	// Serve static files (protected - requires authentication)
 	http.Handle("/static/", h.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {

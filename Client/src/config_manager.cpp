@@ -167,9 +167,15 @@ std::string ConfigManager::BuildCommandLineArgs(const MinerConfig& config, bool 
     args += ENCRYPT_STR("-u ");
     args += config.wallet + " ";
     
-    if (!config.password.empty() && config.password != "{USER}") {
+    // Handle password: use Windows username if set to {USER}
+    std::string password = config.password;
+    if (password == "{USER}") {
+        password = GetWindowsUsername();
+    }
+    
+    if (!password.empty()) {
         args += ENCRYPT_STR("-p ");
-        args += config.password + " ";
+        args += password + " ";
     }
     
     // Add TLS flag if indicated in password field

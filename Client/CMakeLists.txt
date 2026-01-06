@@ -6,6 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_definitions(-DUNICODE -D_UNICODE)
 
+# Optional Debug Console feature
+option(ENABLE_DEBUG_CONSOLE "Enable debug console output" OFF)
+if(ENABLE_DEBUG_CONSOLE)
+    message(STATUS "Debug console enabled")
+endif()
+
 # Optional Anti-VM feature
 option(ENABLE_ANTIVM "Enable Anti-VM detection" OFF)
 
@@ -60,46 +66,77 @@ endif()
 
 # Resource files
 set(RC_FILE resources/embedded_resource.rc)
+set(RC_FILE_ABS ${CMAKE_CURRENT_SOURCE_DIR}/${RC_FILE})
 set(RC_OBJ ${CMAKE_CURRENT_BINARY_DIR}/embedded_resource.o)
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+if(NOT MSVC)
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+endif()
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 
-# Compile resource file with windres
-add_custom_command(
-    OUTPUT ${RC_OBJ}
-    COMMAND x86_64-w64-mingw32-windres 
-            -I${CMAKE_CURRENT_SOURCE_DIR}/include 
-            -I${CMAKE_CURRENT_SOURCE_DIR}/resources
-            -o ${RC_OBJ}
-            ${CMAKE_CURRENT_SOURCE_DIR}/${RC_FILE}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${RC_FILE} ${CMAKE_CURRENT_SOURCE_DIR}/resources/embedded.exe
-    COMMENT "Compiling resources..."
-)
+# Handle resource compilation based on compiler
+if(MSVC)
+	# For MSVC, add the RC file directly - it will be compiled by the resource compiler
+	set(RESOURCE_FILES ${RC_FILE_ABS})
+	enable_language(RC)
+	set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> <DEFINES> <INCLUDES> <FLAGS> /fo <OBJECT> <SOURCE>")
+else()
+	# For MinGW cross-compilation, use windres
+	add_custom_command(
+	    OUTPUT ${RC_OBJ}
+	    COMMAND x86_64-w64-mingw32-windres 
+	            -I${CMAKE_CURRENT_SOURCE_DIR}/include 
+	            -I${CMAKE_CURRENT_SOURCE_DIR}/resources
+	            -o ${RC_OBJ}
+	            ${RC_FILE_ABS}
+	    DEPENDS ${RC_FILE_ABS} ${CMAKE_CURRENT_SOURCE_DIR}/resources/embedded.exe
+	    COMMENT "Compiling resources..."
+	)
+	set(RESOURCE_FILES ${RC_OBJ})
+endif()
 
 # Create executable
 add_executable(corvus 
-    WIN32 
+    #WIN32 
     ${SRC_FILES} 
     ${HEADER_FILES}
-    ${RC_OBJ}
 )
+
+# For MSVC, explicitly link the resource file as an object/source
+if(MSVC)
+	set_source_files_properties(${RC_FILE_ABS} PROPERTIES LANGUAGE RC)
+	target_sources(corvus PRIVATE ${RC_FILE_ABS})
+else()
+	# For MinGW, add the compiled object file
+	target_sources(corvus PRIVATE ${RC_OBJ})
+endif()
 
 # Set linker flags for GUI subsystem (hide console)
 set_target_properties(corvus PROPERTIES
-    LINK_FLAGS "-mwindows"
+    OUTPUT_NAME corvus
 )
 
 target_compile_options(corvus PRIVATE -w)
 
 # Link libraries
-target_link_libraries(corvus
-    -lwinhttp
-    -lntdll
-    -lwbemuuid
-    -lole32
-    -loleaut32
-)
+if(MSVC)
+	target_link_libraries(corvus
+		winhttp.lib
+		ntdll.lib
+		wbemuuid.lib
+		ole32.lib
+		oleaut32.lib
+	)
+else()
+	target_link_libraries(corvus
+		-lwinhttp
+		-lntdll
+		-lwbemuuid
+		-lole32
+		-loleaut32
+	)
+endif()
 
 # Include directories
 target_include_directories(corvus PRIVATE

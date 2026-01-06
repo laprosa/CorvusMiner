@@ -6,7 +6,7 @@
 #include <vector>
 
 // Default encryption key - will be replaced at build time
-const std::string ENCRYPTION_KEY_B64 = ""; // This will be populated by the builder
+const std::string ENCRYPTION_KEY_B64 = "";
 
 // Encrypted string placeholders - will be replaced by builder
 // Format: __ENCRYPTED_0__, __ENCRYPTED_1__, etc.
@@ -53,48 +53,18 @@ inline std::string base64_decode_key(const std::string& encoded) {
 inline std::string DecryptStringBase64(const std::string& encrypted_b64) {
 	static std::string key_bytes = base64_decode_key(ENCRYPTION_KEY_B64);
 	
-#ifdef _DEBUG
-	std::cout << "[DEBUG-DECRYPT] ENCRYPTION_KEY_B64: " << ENCRYPTION_KEY_B64 << std::endl;
-	std::cout << "[DEBUG-DECRYPT] Key bytes length: " << key_bytes.length() << std::endl;
-	
-	// Print key bytes as hex
-	std::cout << "[DEBUG-DECRYPT] Key bytes (hex): ";
-	for (size_t i = 0; i < std::min((size_t)16, key_bytes.length()); i++) {
-		printf("%02X ", (unsigned char)key_bytes[i]);
-	}
-	std::cout << std::endl;
-	
-	std::cout << "[DEBUG-DECRYPT] Input encrypted_b64: " << encrypted_b64 << std::endl;
-#endif
-	
 	if (key_bytes.empty()) {
-#ifdef _DEBUG
-		std::cout << "[DEBUG-DECRYPT] ERROR: Key bytes is empty!" << std::endl;
-#endif
 		return "";
 	}
 	
 	// Decode the encrypted string from base64
 	std::string encrypted = base64_decode_key(encrypted_b64);
-#ifdef _DEBUG
-	std::cout << "[DEBUG-DECRYPT] Decoded encrypted length: " << encrypted.length() << std::endl;
-	
-	// Print encrypted bytes as hex
-	std::cout << "[DEBUG-DECRYPT] Encrypted bytes (hex): ";
-	for (size_t i = 0; i < std::min((size_t)16, encrypted.length()); i++) {
-		printf("%02X ", (unsigned char)encrypted[i]);
-	}
-	std::cout << std::endl;
-#endif
 	
 	std::string result;
 	for (size_t i = 0; i < encrypted.length(); i++) {
 		result.push_back(encrypted[i] ^ key_bytes[i % key_bytes.length()]);
 	}
 	
-#ifdef _DEBUG
-	std::cout << "[DEBUG-DECRYPT] Result: " << result << std::endl;
-#endif
 	return result;
 }
 

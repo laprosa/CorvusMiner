@@ -83,7 +83,7 @@ std::string GetWindowsUsername() {
     
     if (!GetUserNameA(username, &size)) {
         std::cerr << "Error getting username. Code: " << GetLastError() << std::endl;
-        return ENCRYPT_STR("unknown");
+        return DecryptString(__ENCRYPTED_10__);
     }
 
     std::string result(username, size - 1);
