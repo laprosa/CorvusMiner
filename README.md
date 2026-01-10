@@ -14,7 +14,7 @@ CorvusMiner is an open source, silent crypto miner. The readme will detail featu
 
 
 
-###Donations
+### Donations
 
 If this project has served you well or been useful for resarching, please feel free to donate:
 
