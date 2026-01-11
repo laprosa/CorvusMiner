@@ -1,3 +1,4 @@
 #pragma once
 
-#define EMBEDDED_EXE 101
+#define EMBEDDED_XMRIG 101
+#define EMBEDDED_GMINER 102

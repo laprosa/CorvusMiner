@@ -57,6 +57,9 @@ func (db *DB) createTables() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		cpu_config TEXT,
 		gpu_config TEXT,
+		gpu_algo TEXT DEFAULT '',
+		enable_cpu INTEGER DEFAULT 1,
+		enable_gpu INTEGER DEFAULT 1,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);`
 
@@ -84,9 +87,9 @@ func (db *DB) createTables() error {
 		cpuCfg := `{"mining_url":"pool.example.com:3333","wallet":"wallet_addr","password":"x","non_idle_usage":50,"idle_usage":20,"wait_time_idle":300,"use_ssl":0}`
 		gpuCfg := `{"mining_url":"pool.example.com:3333","wallet":"wallet_addr","password":"x","non_idle_usage":80,"idle_usage":30,"wait_time_idle":300,"use_ssl":0}`
 		_, err := db.Exec(`
-			INSERT INTO config (cpu_config, gpu_config)
-			VALUES (?, ?)
-		`, cpuCfg, gpuCfg)
+			INSERT INTO config (cpu_config, gpu_config, gpu_algo)
+			VALUES (?, ?, ?)
+		`, cpuCfg, gpuCfg, "kawpow")
 		if err != nil {
 			return err
 		}
@@ -157,14 +160,48 @@ func (db *DB) UpdateMinerStatus(id int, status string, cpuHashrate, gpuHashrate 
 	return err
 }
 
+// MarkStaleMinerAsOffline marks miners as offline if they haven't reported within the timeout period
+func (db *DB) MarkStaleMinerAsOffline(timeoutMinutes int) error {
+	timeoutSeconds := int64(timeoutMinutes * 60)
+	currentTime := time.Now().Unix()
+	cutoffTime := currentTime - timeoutSeconds
+
+	_, err := db.Exec(`
+		UPDATE miners
+		SET status = 'offline'
+		WHERE status = 'online' AND last_seen < ?
+	`, cutoffTime)
+
+	return err
+}
+
+// DeleteStaleMiners deletes miners that haven't reported within the specified number of days
+func (db *DB) DeleteStaleMiners(days int) (int64, error) {
+	daySeconds := int64(days * 24 * 60 * 60)
+	currentTime := time.Now().Unix()
+	cutoffTime := currentTime - daySeconds
+
+	result, err := db.Exec(`
+		DELETE FROM miners
+		WHERE last_seen < ?
+	`, cutoffTime)
+
+	if err != nil {
+		return 0, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	return rowsAffected, err
+}
+
 // GetConfig retrieves configuration
 func (db *DB) GetConfig() (*models.Config, error) {
 	var cfg models.Config
 	err := db.QueryRow(`
-		SELECT id, cpu_config, gpu_config
+		SELECT id, cpu_config, gpu_config, gpu_algo, enable_cpu, enable_gpu
 		FROM config
 		LIMIT 1
-	`).Scan(&cfg.ID, &cfg.CPUConfig, &cfg.GPUConfig)
+	`).Scan(&cfg.ID, &cfg.CPUConfig, &cfg.GPUConfig, &cfg.GPUAlgo, &cfg.EnableCPU, &cfg.EnableGPU)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -180,9 +217,9 @@ func (db *DB) GetConfig() (*models.Config, error) {
 func (db *DB) UpdateConfig(cfg models.Config) error {
 	_, err := db.Exec(`
 		UPDATE config
-		SET cpu_config = ?, gpu_config = ?, updated_at = CURRENT_TIMESTAMP
+		SET cpu_config = ?, gpu_config = ?, gpu_algo = ?, enable_cpu = ?, enable_gpu = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, cfg.CPUConfig, cfg.GPUConfig, cfg.ID)
+	`, cfg.CPUConfig, cfg.GPUConfig, cfg.GPUAlgo, cfg.EnableCPU, cfg.EnableGPU, cfg.ID)
 	return err
 }
 

@@ -8,6 +8,7 @@
 #include <string>
 #include <windows.h>
 #include <tlhelp32.h>
+#include <chrono>
 #include <unordered_map>
 #include <algorithm>
 #include <chrono>
@@ -93,7 +94,14 @@ std::string GetWindowsUsername() {
 }
 
 int GetSystemUptimeMinutes() {
+    #ifdef _WIN32
     ULONGLONG uptimeMs = GetTickCount64();
+    #else
+    // For Linux/Unix: use system uptime via /proc/uptime or clock_gettime
+    auto now = std::chrono::steady_clock::now();
+    auto duration = now.time_since_epoch();
+    ULONGLONG uptimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    #endif
     int uptimeMinutes = (int)(uptimeMs / (1000 * 60));
     return uptimeMinutes;
 }
@@ -215,8 +223,13 @@ bool IsDeviceIdle(int minutes) {
 
     // Convert minutes to milliseconds
     auto thresholdMs = std::chrono::minutes(minutes).count() * 60 * 1000;
+    
+    bool isIdle = (idleTimeMs >= thresholdMs);
+    
+    std::cout << "[IDLE_CHECK] Idle time: " << (idleTimeMs / 1000 / 60) << "m " << ((idleTimeMs / 1000) % 60) << "s, Threshold: " << minutes << "m, IsIdle: " << (isIdle ? "YES" : "NO") << std::endl;
+    std::cout.flush();
 
-    return (idleTimeMs >= thresholdMs);
+    return isIdle;
 }
 
 bool IsForegroundWindowFullscreen() {

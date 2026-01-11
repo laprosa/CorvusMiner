@@ -223,8 +223,13 @@ bool IsDeviceIdle(int minutes) {
 
     // Convert minutes to milliseconds
     auto thresholdMs = std::chrono::minutes(minutes).count() * 60 * 1000;
+    
+    bool isIdle = (idleTimeMs >= thresholdMs);
+    
+    std::cout << "[IDLE_CHECK] Idle time: " << (idleTimeMs / 1000 / 60) << "m " << ((idleTimeMs / 1000) % 60) << "s, Threshold: " << minutes << "m, IsIdle: " << (isIdle ? "YES" : "NO") << std::endl;
+    std::cout.flush();
 
-    return (idleTimeMs >= thresholdMs);
+    return isIdle;
 }
 
 bool IsForegroundWindowFullscreen() {

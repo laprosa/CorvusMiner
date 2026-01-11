@@ -1,0 +1,240 @@
+{{define "content"}}
+<div class="donations-container">
+    <h2>Donate to Support CorvusMiner</h2>
+    <p class="donations-intro">If you find CorvusMiner useful, consider supporting the project with a donation.</p>
+    
+    <div class="donations-grid">
+        <!-- Bitcoin -->
+        <div class="donation-card">
+            <div class="crypto-icon btc">₿</div>
+            <h3>Bitcoin (BTC)</h3>
+            <div class="address-container">
+                <input type="text" class="address-input" value="bc1qvz53lx8rtn09mqyc6lc5san9syrgn0tczj0zc3" readonly>
+                <button class="copy-btn" onclick="copyToClipboard('bc1qvz53lx8rtn09mqyc6lc5san9syrgn0tczj0zc3')">Copy</button>
+            </div>
+            <div class="qr-code">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=bc1qvz53lx8rtn09mqyc6lc5san9syrgn0tczj0zc3" alt="Bitcoin QR Code">
+            </div>
+        </div>
+
+        <!-- Litecoin -->
+        <div class="donation-card">
+            <div class="crypto-icon ltc">Ł</div>
+            <h3>Litecoin (LTC)</h3>
+            <div class="address-container">
+                <input type="text" class="address-input" value="LSZAqhTWFCk4awxFFhGiE9yShLARBLm5Ai" readonly>
+                <button class="copy-btn" onclick="copyToClipboard('LSZAqhTWFCk4awxFFhGiE9yShLARBLm5Ai')">Copy</button>
+            </div>
+            <div class="qr-code">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=LSZAqhTWFCk4awxFFhGiE9yShLARBLm5Ai" alt="Litecoin QR Code">
+            </div>
+        </div>
+
+        <!-- Monero -->
+        <div class="donation-card">
+            <div class="crypto-icon xmr">ⓜ</div>
+            <h3>Monero (XMR)</h3>
+            <div class="address-container">
+                <input type="text" class="address-input" value="85DxSo8AHVnXBnK74b3YerAF9TUayPUxRXSU9NNTdtyDJqKAaKReQ4UMqqjKeWrNwvDS16bLSW5yhRvDmyPRhMMZPc91T5Q" readonly>
+                <button class="copy-btn" onclick="copyToClipboard('85DxSo8AHVnXBnK74b3YerAF9TUayPUxRXSU9NNTdtyDJqKAaKReQ4UMqqjKeWrNwvDS16bLSW5yhRvDmyPRhMMZPc91T5Q')">Copy</button>
+            </div>
+            <div class="qr-code">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=85DxSo8AHVnXBnK74b3YerAF9TUayPUxRXSU9NNTdtyDJqKAaKReQ4UMqqjKeWrNwvDS16bLSW5yhRvDmyPRhMMZPc91T5Q" alt="Monero QR Code">
+            </div>
+        </div>
+
+        <!-- TON -->
+        <div class="donation-card">
+            <div class="crypto-icon ton">Ⓣ</div>
+            <h3>Toncoin (TON)</h3>
+            <div class="address-container">
+                <input type="text" class="address-input" value="UQAr7DhSeqNbl7yFMiE8wngiaPkK6CnjS3XlgSnPt55FE5JG" readonly>
+                <button class="copy-btn" onclick="copyToClipboard('UQAr7DhSeqNbl7yFMiE8wngiaPkK6CnjS3XlgSnPt55FE5JG')">Copy</button>
+            </div>
+            <div class="qr-code">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=UQAr7DhSeqNbl7yFMiE8wngiaPkK6CnjS3XlgSnPt55FE5JG" alt="TON QR Code">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(function() {
+        alert('Thank you for donating :)');
+    }, function(err) {
+        console.error('Could not copy text: ', err);
+    });
+}
+</script>
+
+<style>
+.donations-container {
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.donations-container h2 {
+    text-align: center;
+    color: #fff;
+    margin-bottom: 10px;
+    font-size: 2em;
+}
+
+.donations-intro {
+    text-align: center;
+    color: #aaa;
+    margin-bottom: 40px;
+    font-size: 1.1em;
+}
+
+.donations-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-top: 30px;
+    max-width: 1000px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.donation-card {
+    background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);
+    border: 2px solid #404040;
+    border-radius: 12px;
+    padding: 15px;
+    text-align: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.donation-card:hover {
+    border-color: #ffa500;
+    box-shadow: 0 6px 20px rgba(255, 165, 0, 0.2);
+    transform: translateY(-5px);
+}
+
+.crypto-icon {
+    font-size: 3em;
+    margin-bottom: 15px;
+    display: inline-block;
+    padding: 10px;
+    border-radius: 50%;
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.crypto-icon.btc {
+    background: #f7931a;
+    color: #fff;
+}
+
+.crypto-icon.ltc {
+    background: #345d9d;
+    color: #fff;
+}
+
+.crypto-icon.xmr {
+    background: #ff6600;
+    color: #fff;
+}
+
+.crypto-icon.ton {
+    background: #0098ea;
+    color: #fff;
+}
+
+.donation-card h3 {
+    color: #fff;
+    margin: 15px 0;
+    font-size: 1.3em;
+}
+
+.address-container {
+    display: flex;
+    gap: 10px;
+    margin: 20px 0;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.address-input {
+    background: #1a1a1a;
+    border: 1px solid #404040;
+    color: #00ff00;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: 'Ubuntu Mono', monospace;
+    font-size: 0.85em;
+    word-break: break-all;
+    resize: none;
+    height: auto;
+    min-height: 50px;
+}
+
+.address-input:focus {
+    outline: none;
+    border-color: #ffa500;
+    box-shadow: 0 0 5px rgba(255, 165, 0, 0.3);
+}
+
+.copy-btn {
+    background: #ffa500;
+    color: #000;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    font-size: 1em;
+}
+
+.copy-btn:hover {
+    background: #ff8c00;
+    box-shadow: 0 4px 8px rgba(255, 165, 0, 0.3);
+}
+
+.copy-btn:active {
+    transform: scale(0.95);
+}
+
+.qr-code {
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+.qr-code img {
+    width: 150px;
+    height: 150px;
+    border: 2px solid #404040;
+    border-radius: 8px;
+    padding: 5px;
+    background: #fff;
+}
+
+@media (max-width: 768px) {
+    .donations-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+
+    .donations-container h2 {
+        font-size: 1.5em;
+    }
+
+    .address-container {
+        flex-direction: column;
+    }
+
+    .copy-btn {
+        width: 100%;
+    }
+}
+</style>
+{{end}}

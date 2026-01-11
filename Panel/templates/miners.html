@@ -23,6 +23,18 @@
         <input type="text" id="minerSearch" class="search-input" placeholder="Search by username, device hash, CPU, GPU...">
     </div>
 
+    <!-- Bulk Delete Stale Miners Section -->
+    <div style="background-color: #262626; border: 2px solid #440000; padding: 2rem; border-radius: 4px; margin-bottom: 20px; color: #e0e0e0; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);">
+        <h3 style="margin-top: 0; margin-bottom: 1.5rem; color: #aa0000; font-size: 1.5rem;">Delete Stale Miners</h3>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <label for="staleMinersInput" style="margin: 0; color: #e0e0e0;">Delete miners that haven't checked in for:</label>
+            <input type="number" id="staleMinersInput" placeholder="Days" min="1" value="7" style="width: 80px; padding: 0.75rem; border-radius: 4px; border: 1px solid #440000; background-color: #1a1a1a; color: #e0e0e0;">
+            <span style="margin: 0; color: #e0e0e0;">days</span>
+            <button id="deleteStaleBtn" class="btn btn-danger" style="margin-left: 10px;">Delete Stale Miners</button>
+            <span id="deleteStaleStatus" style="margin-left: 10px; font-size: 0.9em; color: #888;"></span>
+        </div>
+    </div>
+
     <div class="miners-list">
         {{if .miners}}
         <table class="miners-table" style="font-size: 0.9em; line-height: 1.4;">
@@ -105,6 +117,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const prevPageBtn = document.getElementById('prevPage');
     const nextPageBtn = document.getElementById('nextPage');
     const rowsPerPageSelect = document.getElementById('rowsPerPageSelect');
+    const deleteStaleBtn = document.getElementById('deleteStaleBtn');
+    const staleMinersInput = document.getElementById('staleMinersInput');
+    const deleteStaleStatus = document.getElementById('deleteStaleStatus');
 
     // Format all hashrates
     document.querySelectorAll('.hashrate[data-value]').forEach(el => {
@@ -166,6 +181,50 @@ document.addEventListener('DOMContentLoaded', function() {
         currentPage = 1;
         initializePagination();
         displayPage(currentPage);
+    });
+
+    // Delete stale miners handler
+    deleteStaleBtn.addEventListener('click', async function() {
+        const days = parseInt(staleMinersInput.value);
+        if (isNaN(days) || days < 1) {
+            alert('Please enter a valid number of days');
+            return;
+        }
+
+        if (!confirm(`Are you sure you want to delete all miners that haven't checked in for ${days} days? This action cannot be undone.`)) {
+            return;
+        }
+
+        deleteStaleBtn.disabled = true;
+        deleteStaleStatus.textContent = 'Processing...';
+
+        try {
+            const response = await fetch('/api/miners/delete-stale', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: 'days=' + days
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                deleteStaleStatus.textContent = data.message + ' ✓';
+                deleteStaleStatus.style.color = '#5cb85c';
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            } else {
+                deleteStaleStatus.textContent = 'Error deleting miners';
+                deleteStaleStatus.style.color = '#d9534f';
+            }
+        } catch (error) {
+            deleteStaleStatus.textContent = 'Error: ' + error.message;
+            deleteStaleStatus.style.color = '#d9534f';
+        } finally {
+            deleteStaleBtn.disabled = false;
+        }
     });
 
     // Attach delete handlers
@@ -269,7 +328,6 @@ function displayPage(page) {
     document.getElementById('displayCount').textContent = rowsToShow.length;
     
     initializePagination();
-    attachDeleteHandlers();
 }
 </script>
 {{end}}

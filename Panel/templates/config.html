@@ -5,7 +5,18 @@
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1200px;">
         <!-- CPU Configuration Builder -->
         <div class="config-section">
-            <h3 style="color: #aa0000; font-size: 1em; margin-bottom: 12px; letter-spacing: 1px;">CPU</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin: 0;">CPU</h3>
+                <label style="color: #b3b3b3; display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="cpuEnabled" {{if eq .enableCPU 1}}checked{{end}} style="
+                        margin-right: 8px;
+                        cursor: pointer;
+                        width: 18px;
+                        height: 18px;
+                    ">
+                    Enable
+                </label>
+            </div>
             <div class="form-group" style="margin-bottom: 10px;">
                 <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Mining URL:</label>
                 <input type="text" id="cpuMiningUrl" value="{{.cpuConfig.MiningURL}}" style="
@@ -105,7 +116,42 @@
 
         <!-- GPU Configuration Builder -->
         <div class="config-section">
-            <h3 style="color: #aa0000; font-size: 1em; margin-bottom: 12px; letter-spacing: 1px;">GPU</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin: 0;">GPU</h3>
+                <label style="color: #b3b3b3; display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="gpuEnabled" {{if eq .enableGPU 1}}checked{{end}} style="
+                        margin-right: 8px;
+                        cursor: pointer;
+                        width: 18px;
+                        height: 18px;
+                    ">
+                    Enable
+                </label>
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Algorithm:</label>
+                <select id="gpuAlgo" style="
+                    width: 100%;
+                    padding: 5px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.9em;
+                ">
+                    <option value="ethash" {{if eq .gpuConfig.Algo "ethash"}}selected{{end}}>Ethash (eth, 2%)</option>
+                    <option value="etchash" {{if eq .gpuConfig.Algo "etchash"}}selected{{end}}>Etchash (etc, 2%)</option>
+                    <option value="kawpow" {{if eq .gpuConfig.Algo "kawpow"}}selected{{end}}>KawPow (rvn, ravencoin, 2%)</option>
+                    <option value="autolykos2" {{if eq .gpuConfig.Algo "autolykos2"}}selected{{end}}>Autolykos2 (ergo, 2%)</option>
+                    <option value="kheavyhash" {{if eq .gpuConfig.Algo "kheavyhash"}}selected{{end}}>KHeavyHash (kaspa, 1%)</option>
+                    <option value="cortex" {{if eq .gpuConfig.Algo "cortex"}}selected{{end}}>Cortex (5%)</option>
+                    <option value="beamhash" {{if eq .gpuConfig.Algo "beamhash"}}selected{{end}}>BeamHash (2%)</option>
+                    <option value="equihash144_5" {{if eq .gpuConfig.Algo "equihash144_5"}}selected{{end}}>Equihash144_5 (2%)</option>
+                    <option value="equihash125_4" {{if eq .gpuConfig.Algo "equihash125_4"}}selected{{end}}>Equihash125_4 (2%)</option>
+                    <option value="equihash210_9" {{if eq .gpuConfig.Algo "equihash210_9"}}selected{{end}}>Equihash210_9 (2%)</option>
+                    <option value="cuckoo29" {{if eq .gpuConfig.Algo "cuckoo29"}}selected{{end}}>Cuckoo29 (aeternity, 2%)</option>
+                </select>
+            </div>
             <div class="form-group" style="margin-bottom: 10px;">
                 <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Mining URL:</label>
                 <input type="text" id="gpuMiningUrl" value="{{.gpuConfig.MiningURL}}" style="
@@ -143,20 +189,8 @@
                 ">
             </div>
             <div class="form-group" style="margin-bottom: 15px;">
-                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Non-Idle Usage (%):</label>
-                <input type="number" id="gpuNonIdleUsage" value="{{.gpuConfig.NonIdleUsage}}" min="0" max="100" step="0.1" style="
-                    width: 100%;
-                    padding: 5px;
-                    background-color: #262626;
-                    color: #b3b3b3;
-                    border: 2px solid #440000;
-                    font-family: 'Ubuntu Mono', monospace;
-                    font-size: 0.9em;
-                ">
-            </div>
-            <div class="form-group" style="margin-bottom: 15px;">
-                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Idle Usage (%):</label>
-                <input type="number" id="gpuIdleUsage" value="{{.gpuConfig.IdleUsage}}" min="0" max="100" step="0.1" style="
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Fan Speed (%):</label>
+                <input type="number" id="gpuFanSpeed" value="{{.gpuConfig.FanSpeed}}" min="0" max="100" step="1" style="
                     width: 100%;
                     padding: 5px;
                     background-color: #262626;
@@ -244,8 +278,8 @@ function buildJsonForGpu() {
         mining_url: document.getElementById('gpuMiningUrl').value,
         wallet: document.getElementById('gpuWallet').value,
         password: document.getElementById('gpuPassword').value,
-        non_idle_usage: parseFloat(document.getElementById('gpuNonIdleUsage').value) || 0,
-        idle_usage: parseFloat(document.getElementById('gpuIdleUsage').value) || 0,
+        algo: document.getElementById('gpuAlgo').value,
+        fan_speed: parseInt(document.getElementById('gpuFanSpeed').value) || 80,
         wait_time_idle: parseInt(document.getElementById('gpuWaitTimeIdle').value) || 0,
         use_ssl: document.getElementById('gpuUseSSL').checked ? 1 : 0
     };
@@ -268,12 +302,14 @@ function saveConfig() {
             cpu_non_idle_usage: cpuData.non_idle_usage,
             cpu_idle_usage: cpuData.idle_usage,
             cpu_use_ssl: cpuData.use_ssl,
+            cpu_enabled: document.getElementById('cpuEnabled').checked,
             gpu_mining_url: gpuData.mining_url,
             gpu_wallet: gpuData.wallet,
             gpu_password: gpuData.password,
-            gpu_non_idle_usage: gpuData.non_idle_usage,
-            gpu_idle_usage: gpuData.idle_usage,
+            gpu_algo: gpuData.algo,
+            gpu_fan_speed: gpuData.fan_speed,
             gpu_use_ssl: gpuData.use_ssl,
+            gpu_enabled: document.getElementById('gpuEnabled').checked,
             wait_time_idle: cpuData.wait_time_idle
         };
 
@@ -322,18 +358,21 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('cpuMiningUrl').addEventListener('input', buildJsonForCpu);
     document.getElementById('cpuWallet').addEventListener('input', buildJsonForCpu);
     document.getElementById('cpuPassword').addEventListener('input', buildJsonForCpu);
+    document.getElementById('cpuAlgo').addEventListener('change', buildJsonForCpu);
     document.getElementById('cpuNonIdleUsage').addEventListener('input', buildJsonForCpu);
     document.getElementById('cpuIdleUsage').addEventListener('input', buildJsonForCpu);
     document.getElementById('cpuWaitTimeIdle').addEventListener('input', buildJsonForCpu);
     document.getElementById('cpuUseSSL').addEventListener('change', buildJsonForCpu);
+    document.getElementById('cpuEnabled').addEventListener('change', saveConfig);
 
     document.getElementById('gpuMiningUrl').addEventListener('input', buildJsonForGpu);
     document.getElementById('gpuWallet').addEventListener('input', buildJsonForGpu);
     document.getElementById('gpuPassword').addEventListener('input', buildJsonForGpu);
-    document.getElementById('gpuNonIdleUsage').addEventListener('input', buildJsonForGpu);
-    document.getElementById('gpuIdleUsage').addEventListener('input', buildJsonForGpu);
+    document.getElementById('gpuAlgo').addEventListener('change', buildJsonForGpu);
+    document.getElementById('gpuFanSpeed').addEventListener('input', buildJsonForGpu);
     document.getElementById('gpuWaitTimeIdle').addEventListener('input', buildJsonForGpu);
     document.getElementById('gpuUseSSL').addEventListener('change', buildJsonForGpu);
+    document.getElementById('gpuEnabled').addEventListener('change', saveConfig);
 });
 </script>
 {{end}}

