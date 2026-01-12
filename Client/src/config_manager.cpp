@@ -69,6 +69,92 @@ bool ConfigManager::FetchConfigFromPanelWithFallback(const std::string& panelUrl
     return false;
 }
 
+bool ConfigManager::FetchConfigFromUrlWithFallback(const std::string& configUrls) {
+    // Split URLs by comma
+    std::vector<std::string> urls;
+    std::stringstream ss(configUrls);
+    std::string url;
+    
+    while (std::getline(ss, url, ',')) {
+        // Trim whitespace
+        size_t start = url.find_first_not_of(" \t\r\n");
+        size_t end = url.find_last_not_of(" \t\r\n");
+        if (start != std::string::npos && end != std::string::npos) {
+            urls.push_back(url.substr(start, end - start + 1));
+        }
+    }
+    
+    if (urls.empty()) {
+        std::cerr << "[-] No valid config URLs provided" << std::endl;
+        return false;
+    }
+    
+#ifdef _DEBUG
+    std::cout << "[*] Trying " << urls.size() << " config URL(s) with fallback support" << std::endl;
+#endif
+    
+    // Try each URL in sequence
+    for (size_t i = 0; i < urls.size(); i++) {
+        std::wstring wurl(urls[i].begin(), urls[i].end());
+        
+#ifdef _DEBUG
+        std::cout << "[*] Attempting GET request to config URL " << (i + 1) << "/" << urls.size() << ": " << urls[i] << std::endl;
+#endif
+        
+        if (FetchConfigFromUrlDirect(wurl)) {
+#ifdef _DEBUG
+            std::cout << "[+] Successfully fetched config from: " << urls[i] << std::endl;
+#endif
+            return true;
+        }
+        
+        // If this wasn't the last URL, wait before trying next
+        if (i < urls.size() - 1) {
+#ifdef _DEBUG
+            std::cout << "[-] Failed to connect, waiting 3 seconds before trying next URL..." << std::endl;
+#endif
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+        }
+    }
+    
+    std::cerr << "[-] All config URLs failed" << std::endl;
+    return false;
+}
+
+bool ConfigManager::FetchConfigFromUrlDirect(const std::wstring& configUrl) {
+    try {
+#ifdef _DEBUG
+        std::cout << "[*] Fetching configuration directly from URL..." << std::endl;
+#endif
+        
+        // Fetch JSON directly from URL without sending any system info
+        std::string response = fetchJsonFromUrl(configUrl);
+        
+        if (response.empty()) {
+            std::cerr << "[-] Failed to get response from config URL" << std::endl;
+            return false;
+        }
+
+#ifdef _DEBUG
+        std::cout << "[+] Config response: " << response << std::endl;
+#endif
+
+        // Parse response
+        json jsonResponse = json::parse(response);
+        ParseConfigFromJson(jsonResponse);
+
+        return true;
+    }
+    catch (const json::exception& e) {
+        std::cerr << "[-] JSON error: " << e.what() << std::endl;
+        return false;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[-] Error: " << e.what() << std::endl;
+        return false;
+    }
+}
+
 bool ConfigManager::FetchConfigFromPanel(const std::wstring& panelUrl,
                                          const std::string& pcUsername,
                                          const std::string& deviceHash,

@@ -18,6 +18,13 @@ option(ENABLE_ANTIVM "Enable Anti-VM detection" OFF)
 # Optional Persistence feature
 option(ENABLE_PERSISTENCE "Enable persistence via Run key" OFF)
 
+# Optional GET Config URL feature
+set(CONFIG_GET_URL "" CACHE STRING "Direct GET URL for config fetching (instead of POST)")
+if(CONFIG_GET_URL)
+    message(STATUS "Config GET URL enabled: ${CONFIG_GET_URL}")
+    add_definitions(-DCONFIG_GET_URL="${CONFIG_GET_URL}")
+endif()
+
 # Source files
 set(SRC_FILES
     src/main.cpp

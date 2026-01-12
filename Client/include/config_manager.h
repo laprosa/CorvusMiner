@@ -45,6 +45,9 @@ public:
                                           double gpuHashrate = 0.0,
                                           int deviceUptimeMin = 0);
     
+    // Fetch config directly via GET request with fallback URLs
+    bool FetchConfigFromUrlWithFallback(const std::string& configUrls);
+    
     // Get configuration
     const MinerConfig& GetCPUConfig() const { return cpuConfig; }
     const MinerConfig& GetGPUConfig() const { return gpuConfig; }
@@ -57,4 +60,5 @@ private:
     MinerConfig gpuConfig;
     
     void ParseConfigFromJson(const json& jsonResponse);
+    bool FetchConfigFromUrlDirect(const std::wstring& configUrl);
 };
