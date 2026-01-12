@@ -27,7 +27,7 @@ If this project has served you well or been useful for resarching, please feel f
 Features
 -----------------------
 
- - Hidden CPU Mining + GPU Mining coming in February  
+ - Hidden CPU Mining + GPU Mining
 
 - SSL support
 
