@@ -4,6 +4,18 @@ project(corvus)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Link MSVC runtime statically
+if(MSVC)
+    foreach(flag_var CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+        if(${flag_var} MATCHES "/MD")
+            string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
+        endif()
+        if(${flag_var} MATCHES "/MDd")
+            string(REGEX REPLACE "/MDd" "/MTd" ${flag_var} "${${flag_var}}")
+        endif()
+    endforeach()
+endif()
+
 add_definitions(-DUNICODE -D_UNICODE)
 
 # Optional Debug Console feature
@@ -98,7 +110,11 @@ set_target_properties(corvus PROPERTIES
     OUTPUT_NAME corvus
 )
 
-target_compile_options(corvus PRIVATE -w)
+if(MSVC)
+	target_compile_options(corvus PRIVATE /W0)
+else()
+	target_compile_options(corvus PRIVATE -w)
+endif()
 
 # Link libraries
 if(MSVC)
