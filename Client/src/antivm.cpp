@@ -117,7 +117,8 @@ bool CheckProcessRunning(const std::string& processName) {
 
     if (Process32First(snapshot, &processEntry)) {
         do {
-            std::string exeFile = ToLower(std::string(processEntry.szExeFile));
+            std::wstring wideExeFile(processEntry.szExeFile);
+            std::string exeFile = ToLower(std::string(wideExeFile.begin(), wideExeFile.end()));
             if (exeFile.find(lowerProcessName) != std::string::npos) {
                 CloseHandle(snapshot);
                 return true;
