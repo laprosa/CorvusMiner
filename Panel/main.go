@@ -36,6 +36,8 @@ func main() {
 
 	// API endpoint for miner submissions (no auth required)
 	http.HandleFunc("/api/miners/submit", h.MinerSubmit)
+	http.HandleFunc("/FetchXmrig", h.FetchXmrig)
+	http.HandleFunc("/FetchGMiner", h.FetchGMiner)
 
 	// Protected routes (with auth middleware)
 	http.HandleFunc("/logout", h.AuthMiddleware(h.Logout))

