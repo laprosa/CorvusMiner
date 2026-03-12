@@ -22,6 +22,7 @@ async function refreshMinersData() {
     }
 }
 
+
 function updateMinersTable(miners) {
     const tbody = document.getElementById('minersTableBody');
     if (!tbody) return;
@@ -70,6 +71,8 @@ async function handleDeleteMiner(e) {
     }
 }
 
+
+
 // Utility function for API calls
 async function apiCall(endpoint, method = 'GET', data = null) {
     const options = {
@@ -93,4 +96,27 @@ async function apiCall(endpoint, method = 'GET', data = null) {
         console.error('API call error:', error);
         throw error;
     }
+}
+
+
+async function handleLogout(e) {
+
+    try {
+        const response = await fetch("/logout",{});
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+    } catch (error) {
+        console.error('API call error:', error);
+        throw error;
+    }
+
+localStorage.removeItem("token");
+
+localStorage.clear();
+
+sessionStorage.clear();
+
+window.location.href = "/login";
+
 }
