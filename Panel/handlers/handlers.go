@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -24,6 +25,13 @@ var quotes = []string{
 	"Crime doesn't pay until you cash out.",
 	"Is your refrigerator running?",
 }
+
+// Getting the Template Absoulte Path
+	var exePath,err = os.Executable()
+	var exeDir = filepath.Dir(exePath)
+	var templatesPath = filepath.Join(exeDir,"templates")
+	var staticPath = filepath.Join(exeDir,"static")
+
 
 func getRandomQuote() string {
 	rand.Seed(time.Now().UnixNano())
@@ -68,7 +76,8 @@ func NewHandler(db *database.DB) *Handler {
 
 // renderTemplate is a helper to render HTML templates
 func (h *Handler) renderTemplate(w http.ResponseWriter, tmplName string, data interface{}) {
-	tmpl, err := template.ParseFiles("templates/" + tmplName)
+
+	tmpl, err := template.ParseFiles(templatesPath + "/" + tmplName)
 	if err != nil {
 		http.Error(w, "Failed to load template", http.StatusInternalServerError)
 		log.Printf("Template error: %v", err)
@@ -155,7 +164,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		"quote":            getRandomQuote(),
 	}
 
-	tmpl, err := template.ParseFiles("templates/layout.html", "templates/dashboard.html")
+	tmpl, err := template.ParseFiles(templatesPath + "/layout.html", templatesPath + "/dashboard.html")
 	if err != nil {
 		log.Printf("Error parsing templates: %v", err)
 		http.Error(w, "Error loading template", http.StatusInternalServerError)
@@ -182,8 +191,16 @@ func (h *Handler) MinerList(w http.ResponseWriter, r *http.Request) {
 	funcMap := template.FuncMap{
 		"formatUptime": formatUptimeFunc,
 	}
+	exePath,err :=os.Executable()
+	if err != nil{
+		log.Println("Failed to find Static folder")
+		panic(err)
+	}
 
-	tmpl, err := template.New("layout").Funcs(funcMap).ParseFiles("templates/layout.html", "templates/miners.html")
+	exeDir := filepath.Dir(exePath)
+
+	templatesPath := filepath.Join(exeDir,"templates")
+	tmpl, err := template.New("layout").Funcs(funcMap).ParseFiles(templatesPath + "/layout.html", templatesPath + "/miners.html")
 	if err != nil {
 		log.Printf("Error parsing templates: %v", err)
 		http.Error(w, "Error loading template", http.StatusInternalServerError)
@@ -248,7 +265,8 @@ func (h *Handler) ConfigPage(w http.ResponseWriter, r *http.Request) {
 		data["enableGPU"] = config.EnableGPU
 	}
 
-	tmpl, err := template.ParseFiles("templates/layout.html", "templates/config.html")
+	
+	tmpl, err := template.ParseFiles(templatesPath +"/layout.html", templatesPath +"/config.html")
 	if err != nil {
 		log.Printf("Error parsing templates: %v", err)
 		http.Error(w, "Error loading template", http.StatusInternalServerError)
@@ -508,7 +526,7 @@ func (h *Handler) Donations(w http.ResponseWriter, r *http.Request) {
 		"quote": getRandomQuote(),
 	}
 
-	tmpl, err := template.ParseFiles("templates/layout.html", "templates/donations.html")
+	tmpl, err := template.ParseFiles(templatesPath + "/layout.html", templatesPath + "/donations.html")
 	if err != nil {
 		log.Printf("Error parsing templates: %v", err)
 		http.Error(w, "Error loading template", http.StatusInternalServerError)
@@ -523,7 +541,7 @@ func (h *Handler) Donations(w http.ResponseWriter, r *http.Request) {
 // Handles request for xmrig file
 
 func (h *Handler) FetchXmrig(w http.ResponseWriter, r *http.Request) {
-		path := "./static/resources/embedded.exe"
+		path := staticPath + "/resources/embedded.exe"
 
 	if _, err := os.Stat(path); err != nil {
 		http.Error(w, "file not found", http.StatusNotFound)
@@ -536,7 +554,8 @@ func (h *Handler) FetchXmrig(w http.ResponseWriter, r *http.Request) {
 // Handles request for xmrig file
 
 func (h *Handler) FetchGMiner(w http.ResponseWriter, r *http.Request) {
-		path := "./static/resources/gminer.exe"
+
+		path := staticPath + "/resources/gminer.exe"
 
 	if _, err := os.Stat(path); err != nil {
 		http.Error(w, "file not found", http.StatusNotFound)

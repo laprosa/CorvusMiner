@@ -5,12 +5,21 @@ import (
 	"corvusminer/panel/handlers"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 )
 
 func main() {
 	// Initialize database
-	db, err := database.InitDB("./corvusminer.db")
+	exePath,err :=os.Executable()
+	if err != nil{
+		log.Println("Failed to find Static folder")
+		panic(err)
+	}
+
+	exeDir := filepath.Dir(exePath)
+	db, err := database.InitDB(exeDir + "/corvusminer.db")
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
@@ -52,8 +61,15 @@ func main() {
 	http.HandleFunc("/api/config/update", h.AuthMiddleware(h.UpdateConfig))
 
 	// Serve static files (protected - requires authentication)
+
+	staticPath := filepath.Join(exeDir,"static")
+
+	if _,err := os.Stat(staticPath); os.IsNotExist(err){
+		panic("Static Directory Not Found at:" + staticPath)
+	}
+
 	http.Handle("/static/", h.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))).ServeHTTP(w, r)
+		http.StripPrefix("/static/", http.FileServer(http.Dir(staticPath))).ServeHTTP(w, r)
 	}))
 
 	log.Println("Server running on port 8080")
