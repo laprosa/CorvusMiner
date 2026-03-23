@@ -233,32 +233,6 @@ bool IsDeviceIdle(int minutes) {
     return isIdle;
 }
 
-bool IsForegroundWindowFullscreen() {
-    HWND hwnd = GetForegroundWindow();
-    if (!hwnd) return false;
-
-    // Get window style to exclude certain windows
-    LONG style = GetWindowLong(hwnd, GWL_STYLE);
-    if (style & WS_CHILD) return false; // Ignore child windows
-
-    RECT windowRect;
-    GetWindowRect(hwnd, &windowRect);
-
-    // Get the monitor where the window is located
-    HMONITOR hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    if (!hMonitor) return false;
-
-    MONITORINFO monitorInfo;
-    monitorInfo.cbSize = sizeof(monitorInfo);
-    if (!GetMonitorInfo(hMonitor, &monitorInfo)) return false;
-
-    // Check if window covers the entire monitor
-    return (windowRect.left <= monitorInfo.rcMonitor.left &&
-            windowRect.top <= monitorInfo.rcMonitor.top &&
-            windowRect.right >= monitorInfo.rcMonitor.right &&
-            windowRect.bottom >= monitorInfo.rcMonitor.bottom);
-}
-
 
 
 bool IsAnotherInstanceRunning(const char* mutexName) {
@@ -494,9 +468,10 @@ std::string GetComputerHash() {
     int cpuInfo[4] = { 0 };
     __cpuid(cpuInfo, 1);
 
+    // Mask out EBX bits 31-24 (Initial APIC ID) — varies by which core runs CPUID
     char cpuidStr[36];
     snprintf(cpuidStr, sizeof(cpuidStr), "%08X%08X%08X%08X",
-        (unsigned int)cpuInfo[0], (unsigned int)cpuInfo[1],
+        (unsigned int)cpuInfo[0], (unsigned int)(cpuInfo[1] & 0x00FFFFFF),
         (unsigned int)cpuInfo[2], (unsigned int)cpuInfo[3]);
 
     // 2. Collect motherboard serial number via WMI (Win32_BaseBoard.SerialNumber)

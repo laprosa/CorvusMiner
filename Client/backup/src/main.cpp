@@ -493,9 +493,7 @@ int main(int argc, char *argv[])
                 std::cout << "[+] CPU miner process (PID " << cpuPid << ") is running" << std::endl;
 #endif
                 // Handle process suspension based on monitoring
-                if (AreProcessesRunning(processNames)) {
-                    NtSuspendProcess(cpuPi.value().hProcess);
-                } else if (IsForegroundWindowFullscreen()) {
+                if (AreProcessesRunning(configManager.GetWatchedProcesses())) {
                     NtSuspendProcess(cpuPi.value().hProcess);
                 } else {
                     NtResumeProcess(cpuPi.value().hProcess);
@@ -528,9 +526,7 @@ int main(int argc, char *argv[])
                 std::cout << "[+] GPU miner process (PID " << gpuPid << ") is running" << std::endl;
 #endif
                 // Handle process suspension based on monitoring
-                if (AreProcessesRunning(processNames)) {
-                    NtSuspendProcess(gpuPi.value().hProcess);
-                } else if (IsForegroundWindowFullscreen()) {
+                if (AreProcessesRunning(configManager.GetWatchedProcesses())) {
                     NtSuspendProcess(gpuPi.value().hProcess);
                 } else {
                     NtResumeProcess(gpuPi.value().hProcess);

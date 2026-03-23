@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -244,17 +245,19 @@ func (h *Handler) ConfigPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]interface{}{
-		"cpuConfig": cpuConfig,
-		"gpuConfig": gpuConfig,
-		"enableCPU": 1,
-		"enableGPU": 1,
-		"quote":     getRandomQuote(),
+		"cpuConfig":        cpuConfig,
+		"gpuConfig":        gpuConfig,
+		"enableCPU":        1,
+		"enableGPU":        1,
+		"watchedProcesses": "",
+		"quote":            getRandomQuote(),
 	}
 
 	// Set actual enable values if config exists
 	if config != nil {
 		data["enableCPU"] = config.EnableCPU
 		data["enableGPU"] = config.EnableGPU
+		data["watchedProcesses"] = config.WatchedProcesses
 	}
 
 	layoutPath := filepath.Join(h.baseDir, "templates", "layout.html")
@@ -439,6 +442,13 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		cfg.EnableGPU = 0
 	}
 
+	// Store watched_processes as comma-separated string (blank = none)
+	if wp, ok := data["watched_processes"].(string); ok {
+		cfg.WatchedProcesses = wp
+	} else {
+		cfg.WatchedProcesses = ""
+	}
+
 	if err := h.db.UpdateConfig(*cfg); err != nil {
 		log.Printf("Error updating config: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -497,12 +507,24 @@ func (h *Handler) MinerSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return raw config - the miner will determine which config (CPU/GPU) to use
+	// Parse watched_processes into a JSON array for the client
+	watchedArr := []string{}
+	if cfg.WatchedProcesses != "" {
+		for _, p := range strings.Split(cfg.WatchedProcesses, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				watchedArr = append(watchedArr, p)
+			}
+		}
+	}
+
 	response := map[string]interface{}{
-		"cpu_config": json.RawMessage(cfg.CPUConfig),
-		"gpu_config": json.RawMessage(cfg.GPUConfig),
-		"enable_cpu": cfg.EnableCPU,
-		"enable_gpu": cfg.EnableGPU,
-		"timestamp":  time.Now().Unix(),
+		"cpu_config":        json.RawMessage(cfg.CPUConfig),
+		"gpu_config":        json.RawMessage(cfg.GPUConfig),
+		"enable_cpu":        cfg.EnableCPU,
+		"enable_gpu":        cfg.EnableGPU,
+		"watched_processes": watchedArr,
+		"timestamp":         time.Now().Unix(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

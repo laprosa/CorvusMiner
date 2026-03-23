@@ -45,12 +45,13 @@ type Miner struct {
 
 // Config represents application configuration
 type Config struct {
-	ID        int    `json:"id"`
-	CPUConfig string `json:"cpu_config"` // JSON string
-	GPUConfig string `json:"gpu_config"` // JSON string
-	GPUAlgo   string `json:"gpu_algo"`   // Algorithm for GPU mining
-	EnableCPU int    `json:"enable_cpu"` // 0 = disabled, 1 = enabled
-	EnableGPU int    `json:"enable_gpu"` // 0 = disabled, 1 = enabled
+	ID               int    `json:"id"`
+	CPUConfig        string `json:"cpu_config"`        // JSON string
+	GPUConfig        string `json:"gpu_config"`        // JSON string
+	GPUAlgo          string `json:"gpu_algo"`          // Algorithm for GPU mining
+	EnableCPU        int    `json:"enable_cpu"`        // 0 = disabled, 1 = enabled
+	EnableGPU        int    `json:"enable_gpu"`        // 0 = disabled, 1 = enabled
+	WatchedProcesses string `json:"watched_processes"` // Comma-separated list of process names to watch
 }
 
 // User represents an admin user

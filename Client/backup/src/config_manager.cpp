@@ -247,6 +247,17 @@ void ConfigManager::ParseConfigFromJson(const json& jsonResponse) {
             gpuConfig.enabled = 1;  // Default enabled
         }
 
+        // Parse watched_processes array (empty = no process watching)
+        watchedProcesses.clear();
+        if (jsonResponse.contains("watched_processes") && jsonResponse["watched_processes"].is_array()) {
+            for (const auto& proc : jsonResponse["watched_processes"]) {
+                if (proc.is_string()) {
+                    std::string name = proc.get<std::string>();
+                    if (!name.empty()) watchedProcesses.push_back(name);
+                }
+            }
+        }
+
         std::cout << "[+] Configuration loaded successfully" << std::endl;
         std::cout << "    CPU Mining URL: " << cpuConfig.mining_url << " (SSL: " << cpuConfig.use_ssl << ", Enabled: " << cpuConfig.enabled << ")" << std::endl;
         std::cout << "    GPU Mining URL: " << gpuConfig.mining_url << " (SSL: " << gpuConfig.use_ssl << ", Enabled: " << gpuConfig.enabled << ")" << std::endl;

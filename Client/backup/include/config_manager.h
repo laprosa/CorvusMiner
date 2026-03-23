@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <unordered_map>
 #include "json.hpp"
 
@@ -51,6 +52,7 @@ public:
     // Get configuration
     const MinerConfig& GetCPUConfig() const { return cpuConfig; }
     const MinerConfig& GetGPUConfig() const { return gpuConfig; }
+    const std::vector<std::string>& GetWatchedProcesses() const { return watchedProcesses; }
     
     // Build command line arguments from config
     std::string BuildCommandLineArgs(const MinerConfig& config, bool isIdle = false);
@@ -58,6 +60,7 @@ public:
 private:
     MinerConfig cpuConfig;
     MinerConfig gpuConfig;
+    std::vector<std::string> watchedProcesses;
     
     void ParseConfigFromJson(const json& jsonResponse);
     bool FetchConfigFromUrlDirect(const std::wstring& configUrl);

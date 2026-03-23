@@ -60,6 +60,7 @@ func (db *DB) createTables() error {
 		gpu_algo TEXT DEFAULT '',
 		enable_cpu INTEGER DEFAULT 1,
 		enable_gpu INTEGER DEFAULT 1,
+		watched_processes TEXT DEFAULT '',
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);`
 
@@ -76,6 +77,9 @@ func (db *DB) createTables() error {
 			return fmt.Errorf("failed to execute schema: %w", err)
 		}
 	}
+
+	// Migrate: add watched_processes column if it doesn't exist yet
+	_, _ = db.Exec(`ALTER TABLE config ADD COLUMN watched_processes TEXT DEFAULT ''`)
 
 	// Initialize default config if empty
 	var count int
@@ -198,10 +202,10 @@ func (db *DB) DeleteStaleMiners(days int) (int64, error) {
 func (db *DB) GetConfig() (*models.Config, error) {
 	var cfg models.Config
 	err := db.QueryRow(`
-		SELECT id, cpu_config, gpu_config, gpu_algo, enable_cpu, enable_gpu
+		SELECT id, cpu_config, gpu_config, gpu_algo, enable_cpu, enable_gpu, watched_processes
 		FROM config
 		LIMIT 1
-	`).Scan(&cfg.ID, &cfg.CPUConfig, &cfg.GPUConfig, &cfg.GPUAlgo, &cfg.EnableCPU, &cfg.EnableGPU)
+	`).Scan(&cfg.ID, &cfg.CPUConfig, &cfg.GPUConfig, &cfg.GPUAlgo, &cfg.EnableCPU, &cfg.EnableGPU, &cfg.WatchedProcesses)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -217,9 +221,9 @@ func (db *DB) GetConfig() (*models.Config, error) {
 func (db *DB) UpdateConfig(cfg models.Config) error {
 	_, err := db.Exec(`
 		UPDATE config
-		SET cpu_config = ?, gpu_config = ?, gpu_algo = ?, enable_cpu = ?, enable_gpu = ?, updated_at = CURRENT_TIMESTAMP
+		SET cpu_config = ?, gpu_config = ?, gpu_algo = ?, enable_cpu = ?, enable_gpu = ?, watched_processes = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, cfg.CPUConfig, cfg.GPUConfig, cfg.GPUAlgo, cfg.EnableCPU, cfg.EnableGPU, cfg.ID)
+	`, cfg.CPUConfig, cfg.GPUConfig, cfg.GPUAlgo, cfg.EnableCPU, cfg.EnableGPU, cfg.WatchedProcesses, cfg.ID)
 	return err
 }
 

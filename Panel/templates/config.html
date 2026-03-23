@@ -238,6 +238,24 @@
         </div>
     </div>
 
+    <!-- Watched Processes -->
+    <div style="margin-top: 20px; max-width: 1200px;">
+        <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin-bottom: 10px;">WATCHED PROCESSES</h3>
+        <p style="color: #666; font-size: 0.85em; margin-bottom: 8px;">Miners will pause while any of these processes are running. One process name per line. Leave blank to disable process watching.</p>
+        <textarea id="watchedProcesses" placeholder="e.g.\nGTA5.exe\nValoranta.exe" style="
+            width: 100%;
+            height: 120px;
+            padding: 8px;
+            background-color: #262626;
+            color: #b3b3b3;
+            border: 2px solid #440000;
+            font-family: 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+            resize: vertical;
+            box-sizing: border-box;
+        ">{{.watchedProcesses}}</textarea>
+    </div>
+
     <!-- Save Button -->
     <div style="margin-top: 15px; max-width: 1200px;">
         <button onclick="saveConfig()" style="
@@ -310,7 +328,12 @@ function saveConfig() {
             gpu_fan_speed: gpuData.fan_speed,
             gpu_use_ssl: gpuData.use_ssl,
             gpu_enabled: document.getElementById('gpuEnabled').checked,
-            wait_time_idle: cpuData.wait_time_idle
+            wait_time_idle: cpuData.wait_time_idle,
+            watched_processes: document.getElementById('watchedProcesses').value
+                .split('\n')
+                .map(s => s.trim())
+                .filter(s => s.length > 0)
+                .join(',')
         };
 
         // Send to backend
@@ -353,6 +376,12 @@ function saveConfig() {
 document.addEventListener('DOMContentLoaded', function() {
     buildJsonForCpu();
     buildJsonForGpu();
+
+    // Convert comma-separated watched_processes to one-per-line display
+    const wpField = document.getElementById('watchedProcesses');
+    if (wpField && wpField.value.trim() !== '') {
+        wpField.value = wpField.value.split(',').map(s => s.trim()).filter(s => s).join('\n');
+    }
 
     // Add event listeners to rebuild JSON on input change
     document.getElementById('cpuMiningUrl').addEventListener('input', buildJsonForCpu);
