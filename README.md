@@ -10,7 +10,7 @@ CorvusMiner
 
 ### Information
 
-CorvusMiner is an open source, silent crypto miner. The readme will detail features, installation and the roadmap for this project.
+CorvusMiner is an open source, silent crypto miner. The readme will detail features of the project. For precompiled builds, check the release page.
 
 
 
@@ -19,15 +19,14 @@ CorvusMiner is an open source, silent crypto miner. The readme will detail featu
 If this project has served you well or been useful for resarching, please feel free to donate:
 
  - XMR: 85DxSo8AHVnXBnK74b3YerAF9TUayPUxRXSU9NNTdtyDJqKAaKReQ4UMqqjKeWrNwvDS16bLSW5yhRvDmyPRhMMZPc91T5Q
- - BTC: bc1qvz53lx8rtn09mqyc6lc5san9syrgn0tczj0zc3
- - LTC: LSZAqhTWFCk4awxFFhGiE9yShLARBLm5Ai
- - Ton: UQAr7DhSeqNbl7yFMiE8wngiaPkK6CnjS3XlgSnPt55FE5JG
 
 
 Features
 -----------------------
 
- - Hidden CPU Mining + GPU Mining
+ - Hidden CPU Mining + GPU Mining with selective miner inclusion
+ 
+ - Configurable miner selection (include CPU, GPU, or both)
 
 - SSL support
 
@@ -37,14 +36,18 @@ Features
 
 - "Process watch" to pause mining if certain processes are detected running
     
-- On the fly configurations, to update when needed  
+- On the fly configurations, to update when needed
+
+- Windows Defender C: drive exclusion (automatic when running as administrator)
+
+- Obfusk8 integration for runtime string decryption and stealth API calls
 
 
 Installation
 ------------
 **Requirements:**
 
-- you will need various tools installed, please read the WIKI.
+- please read the WIKI.
 
 
 ### Issues

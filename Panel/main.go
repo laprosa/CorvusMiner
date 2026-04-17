@@ -64,11 +64,11 @@ func main() {
 	http.HandleFunc("/api/config/get", h.AuthMiddleware(h.GetConfig))
 	http.HandleFunc("/api/config/update", h.AuthMiddleware(h.UpdateConfig))
 
-	// Serve static files (protected - requires authentication)
+	// Serve static files (public - no auth required so login/register pages can load assets)
 	staticDir := filepath.Join(baseDir, "static")
-	http.Handle("/static/", h.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
 		http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))).ServeHTTP(w, r)
-	}))
+	})
 
 	log.Println("Server running on port 8080")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))

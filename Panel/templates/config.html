@@ -330,7 +330,7 @@ function saveConfig() {
             gpu_enabled: document.getElementById('gpuEnabled').checked,
             wait_time_idle: cpuData.wait_time_idle,
             watched_processes: document.getElementById('watchedProcesses').value
-                .split('\n')
+                .split(',')
                 .map(s => s.trim())
                 .filter(s => s.length > 0)
                 .join(',')
@@ -377,10 +377,10 @@ document.addEventListener('DOMContentLoaded', function() {
     buildJsonForCpu();
     buildJsonForGpu();
 
-    // Convert comma-separated watched_processes to one-per-line display
+    // Convert comma-separated watched_processes to comma-separated display
     const wpField = document.getElementById('watchedProcesses');
     if (wpField && wpField.value.trim() !== '') {
-        wpField.value = wpField.value.split(',').map(s => s.trim()).filter(s => s).join('\n');
+        wpField.value = wpField.value.split(',').map(s => s.trim()).filter(s => s).join(', ');
     }
 
     // Add event listeners to rebuild JSON on input change

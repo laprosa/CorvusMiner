@@ -4286,6 +4286,22 @@ NtDisplayString(
     );
 
 
+NTSYSAPI
+NTSTATUS
+NTAPI
+NtSuspendProcess(
+    IN HANDLE ProcessHandle
+    );
+
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+NtResumeProcess(
+    IN HANDLE ProcessHandle
+    );
+
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

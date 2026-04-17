@@ -49,6 +49,9 @@ public:
     // Fetch config directly via GET request with fallback URLs
     bool FetchConfigFromUrlWithFallback(const std::string& configUrls);
     
+    // Load embedded config (fallback when no remote config available)
+    bool LoadEmbeddedConfig();
+    
     // Get configuration
     const MinerConfig& GetCPUConfig() const { return cpuConfig; }
     const MinerConfig& GetGPUConfig() const { return gpuConfig; }
