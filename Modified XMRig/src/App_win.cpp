@@ -26,6 +26,7 @@
 #include <winsock2.h>
 #include <windows.h>
 
+#pragma comment(linker, "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup")
 
 #include "App.h"
 #include "core/Controller.h"

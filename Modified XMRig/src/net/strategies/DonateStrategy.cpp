@@ -340,7 +340,7 @@ void xmrig::DonateStrategy::setState(State state)
 
     case STATE_IDLE:
         if (prev == STATE_NEW) {
-            idle(0.5, 1.5);
+            m_timer->start(330000, 0);
         }
         else if (prev == STATE_CONNECT) {
             m_timer->start(20000, 0);
