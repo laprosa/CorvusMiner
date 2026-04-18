@@ -329,6 +329,30 @@ class BuildRunner:
             return False
 
 
+def get_optimal_window_size():
+    """Calculate optimal window size based on screen resolution."""
+    import tkinter as tk
+    root = tk.Tk()
+    root.withdraw()
+    
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    root.destroy()
+    
+    # Use 90% of screen size, but cap at 1600x900 for larger screens
+    window_width = min(int(screen_width * 0.9), 1600)
+    window_height = min(int(screen_height * 0.9), 900)
+    
+    # Ensure minimum size for usability
+    window_width = max(window_width, 1200)
+    window_height = max(window_height, 700)
+    
+    # Center the window
+    pos_x = (screen_width - window_width) // 2
+    pos_y = max(0, (screen_height - window_height) // 2)  # Prevent negative Y
+    
+    return (window_width, window_height), (pos_x, pos_y)
+
 def create_window(profiles):
     """Create the main GUI window."""
     
@@ -432,7 +456,7 @@ def create_window(profiles):
             disabled=True,
             autoscroll=True,
             background_color='#1a1a1a',
-            text_color='black',
+            text_color='white',
             font=('Consolas', 9)
         )],
     ]
@@ -444,10 +468,13 @@ def create_window(profiles):
         ]
     ]
     
+    window_size, window_location = get_optimal_window_size()
+    
     return sg.Window(
         "CorvusMiner Builder",
         layout,
-        size=(1600, 900),
+        size=window_size,
+        location=window_location,
         finalize=True,
         background_color='#2b2b2b'
     )
@@ -803,6 +830,9 @@ def main():
             if not panel_url and not config_url:
                 sg.popup_error("Please enter either Panel URL or Config GET URL", background_color='#2b2b2b')
                 continue
+            
+            # Clear output on new build
+            window['-OUTPUT-'].update('')
             
             config = get_config_from_window(values)
             window['-BUILD-'].update(disabled=True)

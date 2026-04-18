@@ -7,7 +7,7 @@
 
 BOOL update_remote_entry_point_in_ctx(PROCESS_INFORMATION &pi, ULONGLONG entry_point_va, bool is32bit)
 {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "Writing new EP: " << std::hex << entry_point_va << std::endl;
 #endif
 #if defined(_WIN64)

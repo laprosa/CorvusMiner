@@ -175,7 +175,7 @@ double GetGPUMinerHashrate() {
             auto speed = jsonObj["pool_speed"];
             if (speed.is_number()) {
                 double hashrate = speed.get<double>();
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[+] GMiner pool_speed: " << hashrate << " H/s" << std::endl;
 #endif
                 return hashrate;

