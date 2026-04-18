@@ -31,6 +31,7 @@ public:
                              const std::string& cpuName,
                              const std::string& gpuName,
                              const std::string& antivirusName,
+                             const std::string& clientVersion,
                              double cpuHashrate = 0.0,
                              double gpuHashrate = 0.0,
                              int deviceUptimeMin = 0);
@@ -42,6 +43,7 @@ public:
                                           const std::string& cpuName,
                                           const std::string& gpuName,
                                           const std::string& antivirusName,
+                                          const std::string& clientVersion,
                                           double cpuHashrate = 0.0,
                                           double gpuHashrate = 0.0,
                                           int deviceUptimeMin = 0);

@@ -1,3 +1,4 @@
 *.exe
 *.zip
 *.json
+*.venv

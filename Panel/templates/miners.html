@@ -37,32 +37,69 @@
 
     <div class="miners-list">
         {{if .miners}}
+        <style>
+            .miners-table {
+                border-collapse: collapse;
+                table-layout: fixed;
+                width: 100%;
+            }
+            
+            .miners-table th {
+                position: relative;
+                user-select: none;
+            }
+            
+            .resize-handle {
+                position: absolute;
+                right: 0;
+                top: 0;
+                bottom: 0;
+                width: 5px;
+                cursor: col-resize;
+                background-color: transparent;
+                border-right: 2px solid transparent;
+                transition: border-color 0.2s;
+            }
+            
+            .resize-handle:hover {
+                border-right-color: #ff6b00;
+            }
+            
+            .miners-table td {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+        </style>
+        
         <table class="miners-table" style="font-size: 0.9em; line-height: 1.4;">
             <thead>
                 <tr>
-                    <th style="padding: 5px 3px;">PC Username</th>
-                    <th style="padding: 5px 3px;">Device Hash</th>
-                    <th style="padding: 5px 3px;">CPU</th>
-                    <th style="padding: 5px 3px;">GPU</th>
-                    <th style="padding: 5px 3px;">CPU H/s</th>
-                    <th style="padding: 5px 3px;">GPU H/s</th>
-                    <th style="padding: 5px 3px;">Antivirus</th>
-                    <th style="padding: 5px 3px;">Uptime</th>
-                    <th style="padding: 5px 3px;">Status</th>
-                    <th style="padding: 5px 3px;">Actions</th>
+                    <th style="padding: 5px 3px; width: 80px;">PC Username<div class="resize-handle"></div></th>
+                    <th style="padding: 5px 3px; width: 120px;">Device Hash<div class="resize-handle"></div></th>
+                    <th style="padding: 5px 3px; width: 100px;">CPU<div class="resize-handle"></div></th>
+                    <th style="padding: 5px 3px; width: 100px;">GPU<div class="resize-handle"></div></th>
+                    <th style="padding: 5px 3px; width: 70px;">CPU H/s<div class="resize-handle"></div></th>
+                    <th style="padding: 5px 3px; width: 70px;">GPU H/s<div class="resize-handle"></div></th>
+                    <th style="padding: 5px 3px; width: 80px;">Antivirus<div class="resize-handle"></div></th>
+                    <th style="padding: 5px 3px; width: 60px;">Uptime<div class="resize-handle"></div></th>
+                    <th style="padding: 5px 3px; width: 70px;">Client Ver<div class="resize-handle"></div></th>
+                    <th style="padding: 5px 3px; width: 65px;">Status<div class="resize-handle"></div></th>
+                    <th style="padding: 5px 3px; width: 65px;">Actions</th>
                 </tr>
             </thead>
             <tbody id="minersTableBody">
                 {{range .miners}}
-                <tr data-miner-id="{{.ID}}" class="miner-row" data-searchable="{{.PCUsername}} {{.DeviceHash}} {{.CPUName}} {{.GPUName}} {{.Status}}" style="padding: 2px;">
-                    <td style="padding: 3px 2px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{.PCUsername}}</td>
-                    <td style="padding: 3px 2px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><code style="font-size: 0.85em;">{{.DeviceHash}}</code></td>
-                    <td style="padding: 3px 2px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{.CPUName}}</td>
-                    <td style="padding: 3px 2px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{.GPUName}}</td>
-                    <td style="padding: 3px 2px; text-align: right;"><span class="hashrate" data-value="{{.CPUHashRate}}">{{printf "%.2f" .CPUHashRate}} H/s</span></td>
-                    <td style="padding: 3px 2px; text-align: right;"><span class="hashrate" data-value="{{.GPUHashRate}}">{{printf "%.2f" .GPUHashRate}} H/s</span></td>
-                    <td style="padding: 3px 2px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{.AntivirusName}}</td>
-                    <td style="padding: 3px 2px; text-align: right;"><span class="uptime" data-minutes="{{.DeviceUptimeMin}}">{{formatUptime .DeviceUptimeMin}}</span></td>
+                <tr data-miner-id="{{.ID}}" class="miner-row" data-searchable="{{.PCUsername}} {{.DeviceHash}} {{.CPUName}} {{.GPUName}} {{.ClientVersion}} {{.Status}}" style="padding: 2px;">
+                    <td style="padding: 3px 2px;">{{.PCUsername}}</td>
+                    <td style="padding: 3px 2px;"><code style="font-size: 0.85em;">{{.DeviceHash}}</code></td>
+                    <td style="padding: 3px 2px;">{{.CPUName}}</td>
+                    <td style="padding: 3px 2px;">{{.GPUName}}</td>
+                    <td style="padding: 3px 2px;"><span class="hashrate" data-value="{{.CPUHashRate}}">{{printf "%.2f" .CPUHashRate}} H/s</span></td>
+                    <td style="padding: 3px 2px;"><span class="hashrate" data-value="{{.GPUHashRate}}">{{printf "%.2f" .GPUHashRate}} H/s</span></td>
+                    <td style="padding: 3px 2px;">{{.AntivirusName}}</td>
+                    <td style="padding: 3px 2px;"><span class="uptime" data-minutes="{{.DeviceUptimeMin}}">{{formatUptime .DeviceUptimeMin}}</span></td>
+                    <td style="padding: 3px 2px;">{{.ClientVersion}}</td>
                     <td style="padding: 3px 2px;"><span class="status {{.Status}}" style="font-size: 0.9em; padding: 2px 4px;">{{.Status}}</span></td>
                     <td style="padding: 3px 2px;">
                         <button class="btn btn-danger btn-sm delete-miner" data-id="{{.ID}}" style="font-size: 0.85em; padding: 2px 6px;">Delete</button>
@@ -112,6 +149,65 @@ function formatUptime(minutes) {
     }
 }
 
+// Column resizing functionality
+function initializeColumnResizing() {
+    const table = document.querySelector('.miners-table');
+    if (!table) return;
+    
+    const ths = table.querySelectorAll('th');
+    
+    // Load saved column widths
+    const savedWidths = localStorage.getItem('minersTableColumnWidths');
+    if (savedWidths) {
+        const widths = JSON.parse(savedWidths);
+        ths.forEach((th, idx) => {
+            if (widths[idx]) {
+                th.style.width = widths[idx] + 'px';
+            }
+        });
+    }
+    
+    ths.forEach((th, idx) => {
+        const resizeHandle = th.querySelector('.resize-handle');
+        if (!resizeHandle) return;
+        
+        let isResizing = false;
+        let startX = 0;
+        let startWidth = 0;
+        
+        resizeHandle.addEventListener('mousedown', function(e) {
+            isResizing = true;
+            startX = e.clientX;
+            startWidth = th.offsetWidth;
+            
+            // Prevent text selection during resize
+            e.preventDefault();
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        });
+        
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+            
+            const diff = e.clientX - startX;
+            const newWidth = Math.max(40, startWidth + diff); // Minimum 40px width
+            th.style.width = newWidth + 'px';
+        });
+        
+        document.addEventListener('mouseup', function() {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = 'auto';
+                document.body.style.userSelect = 'auto';
+                
+                // Save column widths to localStorage
+                const widths = Array.from(ths).map(t => t.offsetWidth);
+                localStorage.setItem('minersTableColumnWidths', JSON.stringify(widths));
+            }
+        });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const searchInput = document.getElementById('minerSearch');
     const prevPageBtn = document.getElementById('prevPage');
@@ -132,6 +228,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const minutes = parseInt(el.dataset.minutes);
         el.textContent = formatUptime(minutes);
     });
+
+    // Initialize column resizing
+    initializeColumnResizing();
 
     // Auto-refresh miner data every 10 seconds
     setInterval(refreshMiners, 10000);
@@ -248,7 +347,7 @@ async function refreshMiners() {
             if (row) {
                 // Update hashrate cells
                 const cells = row.querySelectorAll('td');
-                if (cells.length >= 6) {
+                if (cells.length >= 7) {
                     // CPU Hashrate (index 4)
                     cells[4].textContent = formatHashrate(miner.cpu_hashrate);
                     // GPU Hashrate (index 5)
@@ -258,9 +357,13 @@ async function refreshMiners() {
                 if (cells.length >= 8) {
                     cells[7].textContent = formatUptime(miner.device_uptime_min);
                 }
-                // Update status (index 8)
+                // Update client version (index 8)
                 if (cells.length >= 9) {
-                    cells[8].innerHTML = '<span class="status ' + miner.status + '" style="font-size: 0.9em; padding: 2px 4px;">' + miner.status + '</span>';
+                    cells[8].textContent = miner.client_version || '2.3.0';
+                }
+                // Update status (index 9)
+                if (cells.length >= 10) {
+                    cells[9].innerHTML = '<span class="status ' + miner.status + '" style="font-size: 0.9em; padding: 2px 4px;">' + miner.status + '</span>';
                 }
             }
         });

@@ -1,0 +1,228 @@
+{{define "content"}}
+<div class="updates-page">
+    <h2 style="color: #aa0000; letter-spacing: 2px; margin-bottom: 15px;">CLIENT UPDATES</h2>
+
+    <!-- Upload Section -->
+    <div class="config-section" style="max-width: 600px; margin-bottom: 30px;">
+        <h3 style="color: #aa0000; font-size: 1.1em; letter-spacing: 1px; margin: 0 0 15px 0;">Upload New Version</h3>
+        
+        <form id="uploadForm" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 15px;">
+            <div class="form-group">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 8px; font-weight: bold;">Version Number:</label>
+                <input type="text" id="versionInput" placeholder="e.g., 2.3.0" pattern="^\d+\.\d+\.\d+$" required style="
+                    width: 100%;
+                    padding: 8px;
+                    background-color: #262626;
+                    color: #b3b3b3;
+                    border: 2px solid #440000;
+                    font-family: 'Ubuntu Mono', monospace;
+                    font-size: 0.95em;
+                    box-sizing: border-box;
+                ">
+                <small style="color: #888; margin-top: 5px; display: block;">Format: major.minor.patch (e.g., 2.3.0)</small>
+            </div>
+
+            <div class="form-group">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 8px; font-weight: bold;">Select File:</label>
+                <input type="file" id="fileInput" required style="
+                    color: #b3b3b3;
+                    padding: 8px;
+                    background-color: #262626;
+                    border: 2px solid #440000;
+                    width: 100%;
+                    box-sizing: border-box;
+                    cursor: pointer;
+                ">
+                <small style="color: #888; margin-top: 5px; display: block;">Supported: .exe, .zip, .tar, .gz</small>
+            </div>
+
+            <div class="form-group">
+                <label style="color: #b3b3b3; display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="setCurrentCheckbox" style="
+                        margin-right: 8px;
+                        cursor: pointer;
+                        width: 18px;
+                        height: 18px;
+                    ">
+                    <span>Set as current version (clients will see this as latest)</span>
+                </label>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="align-self: flex-start; padding: 10px 20px; font-size: 1em;">
+                Upload
+            </button>
+
+            <div id="uploadStatus" style="margin-top: 10px; display: none; padding: 10px; border-radius: 4px;"></div>
+        </form>
+    </div>
+
+    <!-- Version History Section -->
+    <div class="config-section" style="max-width: 900px;">
+        <h3 style="color: #aa0000; font-size: 1.1em; letter-spacing: 1px; margin: 0 0 15px 0;">Version History</h3>
+        
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                <thead>
+                    <tr style="border-bottom: 2px solid #440000;">
+                        <th style="padding: 10px; text-align: left; color: #aa0000;">Version</th>
+                        <th style="padding: 10px; text-align: left; color: #aa0000;">Filename</th>
+                        <th style="padding: 10px; text-align: left; color: #aa0000;">Uploaded</th>
+                        <th style="padding: 10px; text-align: left; color: #aa0000;">Status</th>
+                        <th style="padding: 10px; text-align: left; color: #aa0000;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="versionTableBody">
+                    <!-- Populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <div id="noVersionsMessage" style="text-align: center; color: #666; padding: 20px;">
+            No versions uploaded yet.
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const uploadForm = document.getElementById('uploadForm');
+    const uploadStatus = document.getElementById('uploadStatus');
+
+    // Load version history
+    loadVersionHistory();
+
+    // Upload form submission
+    uploadForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const versionInput = document.getElementById('versionInput');
+        const fileInput = document.getElementById('fileInput');
+        const setCurrentCheckbox = document.getElementById('setCurrentCheckbox');
+
+        // Validate version format
+        const versionRegex = /^\d+\.\d+\.\d+$/;
+        if (!versionRegex.test(versionInput.value)) {
+            showStatus('Invalid version format. Use: major.minor.patch (e.g., 2.3.0)', 'error');
+            return;
+        }
+
+        if (!fileInput.files.length) {
+            showStatus('Please select a file', 'error');
+            return;
+        }
+
+        // Create FormData for file upload
+        const formData = new FormData();
+        formData.append('version', versionInput.value);
+        formData.append('file', fileInput.files[0]);
+        formData.append('isCurrent', setCurrentCheckbox.checked ? '1' : '0');
+
+        try {
+            const response = await fetch('/api/updates/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showStatus('Version ' + versionInput.value + ' uploaded successfully! ✓', 'success');
+                uploadForm.reset();
+                loadVersionHistory();
+            } else {
+                showStatus(data.error || 'Upload failed', 'error');
+            }
+        } catch (error) {
+            showStatus('Error: ' + error.message, 'error');
+        }
+    });
+
+    function showStatus(message, type) {
+        uploadStatus.textContent = message;
+        uploadStatus.style.display = 'block';
+        uploadStatus.style.backgroundColor = type === 'success' ? '#1a3a1a' : '#3a1a1a';
+        uploadStatus.style.color = type === 'success' ? '#5cb85c' : '#d9534f';
+        uploadStatus.style.borderLeft = '4px solid ' + (type === 'success' ? '#5cb85c' : '#d9534f');
+    }
+
+    async function loadVersionHistory() {
+        try {
+            const response = await fetch('/api/updates/list');
+            if (!response.ok) return;
+
+            const versions = await response.json();
+            const tableBody = document.getElementById('versionTableBody');
+            const noVersionsMsg = document.getElementById('noVersionsMessage');
+
+            if (!versions || versions.length === 0) {
+                tableBody.innerHTML = '';
+                noVersionsMsg.style.display = 'block';
+                return;
+            }
+
+            noVersionsMsg.style.display = 'none';
+            tableBody.innerHTML = versions.map(v => `
+                <tr style="border-bottom: 1px solid #333; hover: background-color: #1a1a1a;">
+                    <td style="padding: 10px; color: #b3b3b3;"><strong>v${v.version}</strong></td>
+                    <td style="padding: 10px; color: #888; word-break: break-all;">${v.filename}</td>
+                    <td style="padding: 10px; color: #888; font-size: 0.9em;">${new Date(v.uploaded_at).toLocaleDateString()}</td>
+                    <td style="padding: 10px;">
+                        ${v.is_current ? '<span style="color: #5cb85c; font-weight: bold;">✓ Current</span>' : '<span style="color: #888;">Available</span>'}
+                    </td>
+                    <td style="padding: 10px;">
+                        <a href="${v.download_url}" style="color: #ff6b00; text-decoration: none; margin-right: 10px;" download>Download</a>
+                        ${!v.is_current ? `<button class="btn btn-sm" style="padding: 4px 8px; font-size: 0.85em; background-color: #440000; color: #b3b3b3; border: 1px solid #666; cursor: pointer; border-radius: 3px; margin-right: 5px;" onclick="setCurrent(${v.id}, '${v.version}')">Set Current</button>` : ''}
+                        <button class="btn btn-sm" style="padding: 4px 8px; font-size: 0.85em; background-color: #661a1a; color: #ff9999; border: 1px solid #666; cursor: pointer; border-radius: 3px;" onclick="deleteVersion(${v.id}, '${v.version}')">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        } catch (error) {
+            console.error('Error loading version history:', error);
+        }
+    }
+
+    window.setCurrent = async function(id, version) {
+        try {
+            const response = await fetch('/api/updates/set-current', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'id=' + id
+            });
+
+            if (response.ok) {
+                alert('Version ' + version + ' set as current');
+                loadVersionHistory();
+            } else {
+                alert('Error setting current version');
+            }
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    };
+
+    window.deleteVersion = async function(id, version) {
+        if (!confirm('Are you sure you want to delete version ' + version + '? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/updates/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'id=' + id
+            });
+
+            if (response.ok) {
+                alert('Version ' + version + ' deleted successfully');
+                loadVersionHistory();
+            } else {
+                const data = await response.json();
+                alert('Error: ' + (data.error || 'Failed to delete version'));
+            }
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    };
+});
+</script>
+{{end}}

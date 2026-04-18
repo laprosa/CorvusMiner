@@ -637,3 +637,241 @@ func (h *Handler) ServeGMiner(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Served GMiner binary to: %s", r.RemoteAddr)
 }
+
+// UpdatesPage handles displaying the updates management page
+func (h *Handler) UpdatesPage(w http.ResponseWriter, r *http.Request) {
+	data := map[string]interface{}{
+		"quote": getRandomQuote(),
+	}
+
+	layoutPath := filepath.Join(h.baseDir, "templates", "layout.html")
+	updatesPath := filepath.Join(h.baseDir, "templates", "updates.html")
+	tmpl, err := template.ParseFiles(layoutPath, updatesPath)
+	if err != nil {
+		log.Printf("Error parsing templates: %v", err)
+		http.Error(w, "Error loading template", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	tmpl.ExecuteTemplate(w, "layout", data)
+}
+
+// UploadUpdate handles uploading a new client update
+func (h *Handler) UploadUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse the multipart form
+	if err := r.ParseMultipartForm(100 * 1024 * 1024); err != nil { // 100MB max
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to parse form"})
+		return
+	}
+
+	version := r.FormValue("version")
+	isCurrent := r.FormValue("isCurrent") == "1"
+
+	if version == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Version required"})
+		return
+	}
+
+	// Get uploaded file
+	file, handler, err := r.FormFile("file")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to get file"})
+		return
+	}
+	defer file.Close()
+
+	// Create updates directory if it doesn't exist
+	updatesDir := filepath.Join(h.baseDir, "updates")
+	if err := os.MkdirAll(updatesDir, 0755); err != nil {
+		log.Printf("Error creating updates directory: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to create updates directory"})
+		return
+	}
+
+	// Save file with version as part of filename
+	filename := fmt.Sprintf("corvusminer-v%s-%s", version, handler.Filename)
+	filepath_ := filepath.Join(updatesDir, filename)
+
+	dst, err := os.Create(filepath_)
+	if err != nil {
+		log.Printf("Error creating file: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to save file"})
+		return
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, file); err != nil {
+		log.Printf("Error copying file: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to save file"})
+		return
+	}
+
+	// Store in database
+	if err := h.db.AddUpdate(version, filename, isCurrent); err != nil {
+		log.Printf("Error adding update to database: %v", err)
+		// Try to remove the file if DB insert fails
+		os.Remove(filepath_)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to save update metadata"})
+		return
+	}
+
+	log.Printf("Update v%s uploaded successfully", version)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"message": fmt.Sprintf("Version %s uploaded", version)})
+}
+
+// ListUpdates returns all updates as JSON
+func (h *Handler) ListUpdates(w http.ResponseWriter, r *http.Request) {
+	updates, err := h.db.GetUpdates()
+	if err != nil {
+		log.Printf("Error fetching updates: %v", err)
+		http.Error(w, "Error fetching updates", http.StatusInternalServerError)
+		return
+	}
+
+	if updates == nil {
+		updates = []map[string]interface{}{}
+	}
+
+	// Add download URLs to each update
+	for i, update := range updates {
+		filename := update["filename"].(string)
+		update["download_url"] = "/updates/" + filename
+		updates[i] = update
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updates)
+}
+
+// SetCurrentUpdate marks an update as the current version
+func (h *Handler) SetCurrentUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := r.FormValue("id")
+	if id == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "ID required"})
+		return
+	}
+
+	var updateID int
+	_, err := fmt.Sscanf(id, "%d", &updateID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Invalid ID"})
+		return
+	}
+
+	if err := h.db.SetCurrentUpdate(updateID); err != nil {
+		log.Printf("Error setting current update: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to set current update"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"message": "Update set as current"})
+}
+
+// GetCurrentVersion returns the current client version (public endpoint for clients)
+func (h *Handler) GetCurrentVersion(w http.ResponseWriter, r *http.Request) {
+	current, err := h.db.GetCurrentUpdate()
+	if err != nil {
+		log.Printf("Error fetching current version: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to fetch version"})
+		return
+	}
+
+	if current == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"version":      "1.0.0",
+			"filename":     "",
+			"download_url": "",
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"version":      current["version"],
+		"filename":     current["filename"],
+		"download_url": "/updates/" + current["filename"].(string),
+	})
+}
+
+// DeleteUpdate removes an update file and database record
+func (h *Handler) DeleteUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := r.FormValue("id")
+	if id == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "ID required"})
+		return
+	}
+
+	var updateID int
+	_, err := fmt.Sscanf(id, "%d", &updateID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Invalid ID"})
+		return
+	}
+
+	// Delete from database and get filename
+	filename, err := h.db.DeleteUpdate(updateID)
+	if err != nil {
+		log.Printf("Error deleting update: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Failed to delete update"})
+		return
+	}
+
+	// Delete file from disk
+	updatesDir := filepath.Join(h.baseDir, "updates")
+	filePath := filepath.Join(updatesDir, filename)
+	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+		log.Printf("Error deleting update file: %v", err)
+		// Don't return error - DB was deleted successfully even if file deletion failed
+	}
+
+	log.Printf("Update %s deleted successfully", filename)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"message": "Update deleted"})
+}

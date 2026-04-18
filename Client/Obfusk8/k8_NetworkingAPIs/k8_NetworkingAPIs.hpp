@@ -1,7 +1,48 @@
 #pragma once
 
 #include <windows.h>
-#include <wininet.h>
+#include <winhttp.h>
+
+// Define INTERNET_STATUS_CALLBACK if not available
+#ifndef INTERNET_STATUS_CALLBACK
+typedef VOID (WINAPI *INTERNET_STATUS_CALLBACK)(
+    HINTERNET hInternet,
+    DWORD_PTR dwContext,
+    DWORD dwInternetStatus,
+    LPVOID lpvStatusInformation,
+    DWORD dwStatusInformationLength
+);
+#endif
+
+// Define WinINet types that are not in WinHTTP
+// These are needed for the function pointers that load from wininet.dll
+#ifndef INTERNET_BUFFERSA
+typedef struct {
+    DWORD dwStructSize;
+    DWORD dwContentLength;
+} INTERNET_BUFFERSA, *LPINTERNET_BUFFERSA;
+#endif
+
+#ifndef URL_COMPONENTSA
+typedef struct {
+    DWORD dwStructSize;
+    LPSTR lpszScheme;
+    DWORD dwSchemeLength;
+    INTERNET_SCHEME nScheme;
+    LPSTR lpszHostName;
+    DWORD dwHostNameLength;
+    INTERNET_PORT nPort;
+    LPSTR lpszUserName;
+    DWORD dwUserNameLength;
+    LPSTR lpszPassword;
+    DWORD dwPasswordLength;
+    LPSTR lpszUrlPath;
+    DWORD dwUrlPathLength;
+    LPSTR lpszExtraInfo;
+    DWORD dwExtraInfoLength;
+} URL_COMPONENTSA, *LPURL_COMPONENTSA;
+#endif
+
 #include "../Instrumentation/materialization/state/Obfusk8Core.hpp"
 
 namespace k8_NetworkingAPIs
@@ -13,12 +54,13 @@ namespace k8_NetworkingAPIs
     using HttpEndRequestA_t             =       BOOL(WINAPI*)(HINTERNET, LPINTERNET_BUFFERSA, DWORD, DWORD_PTR);
     using HttpOpenRequestA_t            =       HINTERNET(WINAPI*)(HINTERNET, LPCSTR, LPCSTR, LPCSTR, LPCSTR, LPCSTR*, DWORD, DWORD_PTR);
     using InternetOpenA_t               =       HINTERNET(WINAPI*)(LPCSTR, DWORD, LPCSTR, LPCSTR, DWORD);
-    using InternetConnectA_t            =       HINTERNET(WINAPI*)(HINTERNET, LPCSTR, INTERNET_PORT, LPCSTR, LPCSTR, DWORD, DWORD, DWORD_PTR);
+    using InternetConnectA_t            =       HINTERNET(WINAPI*)(HINTERNET, LPCSTR, WORD, LPCSTR, LPCSTR, DWORD, DWORD, DWORD_PTR);
     using InternetGetConnectedState_t   =       BOOL(WINAPI*)(LPDWORD, DWORD);
     using InternetSetOptionA_t          =       BOOL(WINAPI*)(HINTERNET, DWORD, LPVOID, DWORD);
     using InternetWriteFile_t           =       BOOL(WINAPI*)(HINTERNET, LPCVOID, DWORD, LPDWORD);
     using InternetCrackUrlA_t           =       BOOL(WINAPI*)(LPCSTR, DWORD, DWORD, LPURL_COMPONENTSA);
-    using InternetSetStatusCallbackA_t  =       INTERNET_STATUS_CALLBACK(WINAPI*)(HINTERNET, INTERNET_STATUS_CALLBACK);
+    // InternetSetStatusCallbackA_t: returns the old callback (function pointer) and takes new callback
+    typedef INTERNET_STATUS_CALLBACK (WINAPI *InternetSetStatusCallbackA_t)(HINTERNET, INTERNET_STATUS_CALLBACK);
     using InternetCloseHandle_t         =       BOOL(WINAPI*)(HINTERNET);
     using InternetOpenUrlA_t            =       HINTERNET(WINAPI*)(HINTERNET, LPCSTR, LPCSTR, DWORD, DWORD, DWORD_PTR);
     using InternetReadFile_t            =       BOOL(WINAPI*)(HINTERNET, LPVOID, DWORD, LPDWORD);

