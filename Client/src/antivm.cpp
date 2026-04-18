@@ -3,7 +3,6 @@
 #include <winhttp.h>
 #include <iphlpapi.h>
 #include <tlhelp32.h>
-#include <wininet.h>
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -12,7 +11,6 @@
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "advapi32.lib")
-#pragma comment(lib, "wininet.lib")
 
 namespace AntiVM {
 
@@ -391,21 +389,29 @@ std::pair<std::string, bool> CheckMacAddress() {
 std::string FetchIPFromService(const std::string& url) {
     std::string result;
     
-    // Parse URL
-    URL_COMPONENTSA urlComp;
-    ZeroMemory(&urlComp, sizeof(urlComp));
-    urlComp.dwStructSize = sizeof(urlComp);
+    // Parse URL manually
+    std::string scheme, hostName, urlPath;
+    bool useSSL = false;
+    WORD port = 80;
     
-    char hostName[256] = {0};
-    char urlPath[1024] = {0};
-    
-    urlComp.lpszHostName = hostName;
-    urlComp.dwHostNameLength = sizeof(hostName);
-    urlComp.lpszUrlPath = urlPath;
-    urlComp.dwUrlPathLength = sizeof(urlPath);
-
-    if (!InternetCrackUrlA(url.c_str(), url.length(), 0, &urlComp)) {
+    size_t schemeEnd = url.find("://");
+    if (schemeEnd == std::string::npos) {
         return "";
+    }
+    
+    scheme = url.substr(0, schemeEnd);
+    useSSL = (scheme == "https");
+    port = useSSL ? 443 : 80;
+    
+    size_t hostStart = schemeEnd + 3;
+    size_t pathStart = url.find('/', hostStart);
+    
+    if (pathStart == std::string::npos) {
+        hostName = url.substr(hostStart);
+        urlPath = "/";
+    } else {
+        hostName = url.substr(hostStart, pathStart - hostStart);
+        urlPath = url.substr(pathStart);
     }
 
     HINTERNET hSession = WinHttpOpen(L"AntiVM/1.0", 
@@ -414,20 +420,20 @@ std::string FetchIPFromService(const std::string& url) {
                                       WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) return "";
 
-    std::wstring wHostName(hostName, hostName + strlen(hostName));
+    std::wstring wHostName(hostName.begin(), hostName.end());
     HINTERNET hConnect = WinHttpConnect(hSession, wHostName.c_str(), 
-                                        urlComp.nPort, 0);
+                                        port, 0);
     if (!hConnect) {
         WinHttpCloseHandle(hSession);
         return "";
     }
 
-    std::wstring wUrlPath(urlPath, urlPath + strlen(urlPath));
+    std::wstring wUrlPath(urlPath.begin(), urlPath.end());
+    DWORD flags = useSSL ? WINHTTP_FLAG_SECURE : 0;
     HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", wUrlPath.c_str(),
                                             NULL, WINHTTP_NO_REFERER,
                                             WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                            (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? 
-                                            WINHTTP_FLAG_SECURE : 0);
+                                            flags);
     if (!hRequest) {
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
@@ -443,7 +449,7 @@ std::string FetchIPFromService(const std::string& url) {
         
         while (WinHttpQueryDataAvailable(hRequest, &bytesAvailable) && bytesAvailable > 0) {
             DWORD bytesRead = 0;
-            DWORD toRead = min(bytesAvailable, sizeof(buffer) - 1);
+            DWORD toRead = bytesAvailable < (sizeof(buffer) - 1) ? bytesAvailable : (sizeof(buffer) - 1);
             
             if (WinHttpReadData(hRequest, buffer, toRead, &bytesRead)) {
                 buffer[bytesRead] = '\0';
