@@ -25,6 +25,10 @@ Features
 -----------------------
 
  - Hidden CPU Mining + GPU Mining with selective miner inclusion
+
+ - GUI Builder (WOW I know)
+
+ - Remote Update Feature, Update your miners from the panel itself
  
  - Configurable miner selection (include CPU, GPU, or both)
 
