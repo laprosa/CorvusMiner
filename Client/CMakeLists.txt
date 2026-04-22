@@ -218,6 +218,10 @@ if(MSVC)
 		oleaut32.lib
 		iphlpapi.lib
 	)
+	# Link Task Scheduler library if persistence is enabled
+	if(ENABLE_PERSISTENCE)
+		target_link_libraries(corvus taskschd.lib)
+	endif()
 else()
 	target_link_libraries(corvus
 		-lwinhttp
@@ -226,7 +230,13 @@ else()
 		-lole32
 		-loleaut32
 		-liphlpapi
+		-luuid
 	)
+	# Link Task Scheduler library if persistence is enabled
+	if(ENABLE_PERSISTENCE)
+		# Try to link taskschd, fallback to mstask if needed
+		target_link_libraries(corvus -ltaskschd)
+	endif()
 endif()
 
 # Add admin manifest if enabled

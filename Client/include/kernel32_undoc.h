@@ -6,7 +6,7 @@
 //load_kernel32_functions();
 //
 
-BOOL
+static BOOL
 (WINAPI *CreateProcessInternalW)(HANDLE hToken,
     LPCWSTR lpApplicationName,
     LPWSTR lpCommandLine,
@@ -22,7 +22,7 @@ BOOL
     );
 
 
-BOOL load_kernel32_functions()
+inline BOOL load_kernel32_functions()
 {
     HMODULE hKernel32 = GetModuleHandleA("kernel32");
     CreateProcessInternalW = (BOOL(WINAPI *)(HANDLE, LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION, PHANDLE)) GetProcAddress(hKernel32, "CreateProcessInternalW");

@@ -9,11 +9,12 @@
 // Include Obfusk8 for stealth API calling
 #include "../Obfusk8/Instrumentation/materialization/state/Obfusk8Core.hpp"
 
-#pragma comment(lib, "advapi32.lib")
-#pragma comment(lib, "shell32.lib")
-#pragma comment(lib, "ole32.lib")
-#pragma comment(lib, "oleaut32.lib")
-#pragma comment(lib, "taskschd.lib")
+// Note: #pragma comment() is MSVC-only. MinGW linking is handled in CMakeLists.txt
+// #pragma comment(lib, "advapi32.lib")
+// #pragma comment(lib, "shell32.lib")
+// #pragma comment(lib, "ole32.lib")
+// #pragma comment(lib, "oleaut32.lib")
+// #pragma comment(lib, "taskschd.lib")
 
 namespace Persistence {
 

