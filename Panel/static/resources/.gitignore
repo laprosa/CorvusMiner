@@ -1,5 +1,4 @@
 # Ignore miner binaries (too large for git)
-*.exe
 *.bin
 
 # Keep the README
