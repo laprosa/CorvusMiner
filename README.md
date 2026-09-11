@@ -1,3 +1,13 @@
+my pubkey for signed messages:<br>
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEaqSG/hYJKwYBBAHaRw8BAQdAbfGf1a9tETqPD8x2jjsGldcsRUubfysAfCbA
+MdDDgN+0HExhcHJvc2EgPGxhcHJvc2FAZ2l0aHViLmNvbT6ImQQTFgoAQRYhBEHG
+kQeIOreUOXcdX1nI95Hahc8XBQJqpIb+AhsDBQkDwmcABQsJCAcCAiICBhUKCQgL
+AgQWAgMBAh4HAheAAAoJEFnI95Hahc8XeL8BAJBnc/erUyERjShM1EHWHHmi4O8N
+hJDTmKlO0vvhdUx3AQDx60Qqq6Uj2SRMlXXuf4rjt4lTItac5iL3m1x0G361BQ==
+=uLAR
+-----END PGP PUBLIC KEY BLOCK-----
 
 
 <p align="center">
