@@ -15,8 +15,8 @@ namespace Persistence {
     // Returns true if at least one removal succeeded.
     bool RemoveFromStartup();
     
-    // Copies the current executable to %APPDATA%\Microsoft\<name> and returns
-    // the destination path, or empty string on failure.
+    // Copies the current executable to %APPDATA%\VLCManager\VLCManager.exe and
+    // returns the destination path, or empty string on failure.
     std::string CopySelfToAppData();
 
     // Helper functions

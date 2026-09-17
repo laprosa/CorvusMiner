@@ -139,6 +139,31 @@ PVOID map_buffer_into_process(HANDLE hProcess, HANDLE hSection)
     return sectionBaseAddress;
 }
 
+namespace {
+
+// Releases a hollow process that failed to launch: kills it (it would otherwise
+// stay alive and suspended), closes the primary handles and drops the
+// ProcessStorage entry. Previously each failure leaked the suspended process
+// and two kernel handles.
+void abandon_hollow_process(PROCESS_INFORMATION& pi) {
+    if (pi.hProcess) {
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hProcess);
+        pi.hProcess = NULL;
+    }
+    if (pi.hThread) {
+        CloseHandle(pi.hThread);
+        pi.hThread = NULL;
+    }
+    if (pi.dwProcessId) {
+        ProcessStorage::RemoveProcess(pi.dwProcessId);
+    }
+    pi.dwProcessId  = 0;
+    pi.dwThreadId   = 0;
+}
+
+} // namespace
+
 DWORD transacted_hollowing(wchar_t* targetPath, BYTE* payladBuf, DWORD payloadSize, LPWSTR args)
 {
     wchar_t dummy_name[MAX_PATH] = { 0 };
@@ -161,6 +186,7 @@ DWORD transacted_hollowing(wchar_t* targetPath, BYTE* payladBuf, DWORD payloadSi
     PROCESS_INFORMATION pi = { 0 };
     if (!create_new_process_internal(pi, targetPath, args, start_dir)) {
         std::cerr << "Creating process failed!\n";
+        CloseHandle(hSection);
         return false;
     }
 
@@ -183,13 +209,22 @@ DWORD transacted_hollowing(wchar_t* targetPath, BYTE* payladBuf, DWORD payloadSi
     }
 
     PVOID remote_base = map_buffer_into_process(hProcess, hSection);
+
+    // The section object is only needed to create the remote view: closing it
+    // here (the view keeps its own reference) stops leaking one kernel section
+    // handle per injection, which is what slowly degraded the whole system.
+    CloseHandle(hSection);
+    hSection = NULL;
+
     if (!remote_base) {
         std::cerr << "Failed mapping the buffer!\n";
+        abandon_hollow_process(pi);
         return false;
     }
     bool isPayl32b = !pe_is64bit(payladBuf);
     if (!redirect_to_payload(payladBuf, remote_base, pi, isPayl32b)) {
         std::cerr << "Failed to redirect!\n";
+        abandon_hollow_process(pi);
         return false;
     }
     
@@ -214,9 +249,7 @@ DWORD transacted_hollowing(wchar_t* targetPath, BYTE* payladBuf, DWORD payloadSi
     if (!ResumeThread(pi.hThread)) {
         std::cerr << "Failed to resume thread! Error: " << GetLastError() << "\n";
         // Clean up on failure
-        TerminateProcess(pi.hProcess, 1);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
+        abandon_hollow_process(pi);
         return false;
     }
     

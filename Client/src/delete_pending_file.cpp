@@ -55,6 +55,7 @@ HANDLE make_section_from_delete_pending_file(wchar_t* filePath, BYTE* payladBuf,
     status = NtSetInformationFile(hDelFile, &status_block, &info, sizeof(info), FileDispositionInformation);
     if (!NT_SUCCESS(status)) {
         std::cout << "[-] Setting file information failed: " << std::hex << status << "\n";
+        NtClose(hDelFile);
         return INVALID_HANDLE_VALUE;
     }
     std::cout << "[+] File marked for deletion\n";
@@ -75,6 +76,7 @@ HANDLE make_section_from_delete_pending_file(wchar_t* filePath, BYTE* payladBuf,
     if (!NT_SUCCESS(status)) {
         DWORD err = GetLastError();
         std::cerr << "[-] Failed writing payload! Error: " << std::hex << err << std::endl;
+        NtClose(hDelFile);
         return INVALID_HANDLE_VALUE;
     }
     std::cout << "[+] Payload written successfully\n";
@@ -90,6 +92,8 @@ HANDLE make_section_from_delete_pending_file(wchar_t* filePath, BYTE* payladBuf,
     );
     if (status != STATUS_SUCCESS) {
         std::cerr << "[-] NtCreateSection failed: " << std::hex << status << std::endl;
+        NtClose(hDelFile);
+        hDelFile = nullptr;
         return INVALID_HANDLE_VALUE;
     }
     NtClose(hDelFile);

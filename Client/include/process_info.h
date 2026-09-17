@@ -11,6 +11,12 @@ public:
     
     // Get process information (returns std::nullopt if not found)
     static std::optional<PROCESS_INFORMATION> GetProcess(DWORD pid);
+
+    // Drop a process entry once its handles have been closed by the owner.
+    static void RemoveProcess(DWORD pid);
+
+    // Terminate every tracked process (used for shutdown).
+    static void TerminateAll();
     
 
 private:

