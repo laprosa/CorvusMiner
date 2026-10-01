@@ -142,7 +142,7 @@ func main() {
 
 	// Resource endpoints (no auth required - miners need to download these)
 	http.HandleFunc("/resources/xmrig", h.ServeXMRig)
-	http.HandleFunc("/resources/gminer", h.ServeGMiner)
+	http.HandleFunc("/resources/wildrig", h.ServeWildrig)
 
 	// Protected routes (with auth middleware)
 	http.HandleFunc("/logout", h.AuthMiddleware(h.Logout))

@@ -7,14 +7,14 @@ This directory contains the miner binaries that can be downloaded by clients.
 Place the following files in this directory:
 
 - `xmrig.exe` - XMRig CPU miner binary
-- `gminer.exe` - GMiner GPU miner binary
+- `wildrig.exe` - WildRig GPU miner binary
 
 ## Access URLs
 
 Once the files are placed here, they can be accessed via:
 
 - XMRig: `http://[panel-url]/resources/xmrig`
-- GMiner: `http://[panel-url]/resources/gminer`
+- WildRig: `http://[panel-url]/resources/wildrig`
 
 These endpoints do not require authentication and can be accessed directly by miner clients.
 

@@ -122,8 +122,8 @@ if(ENABLE_CPU_MINER OR ENABLE_GPU_MINER)
     endif()
 
     if(ENABLE_GPU_MINER)
-        string(APPEND RC_CONTENT "EMBEDDED_GMINER RCDATA \"${CMAKE_CURRENT_SOURCE_DIR}/resources/gminer.exe\"\n")
-        message(STATUS "Embedding GPU miner (GMiner) in resources")
+        string(APPEND RC_CONTENT "EMBEDDED_WILDRIG RCDATA \"${CMAKE_CURRENT_SOURCE_DIR}/resources/wildrig.exe\"\n")
+        message(STATUS "Embedding GPU miner (WildRig) in resources")
         add_definitions(-DENABLE_GPU_MINER)
     endif()
 

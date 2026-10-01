@@ -146,9 +146,13 @@ double GetMinerHashrate() {
     return hashrate;
 }
 
-// Get GPU miner (SRBMiner-MULTI) hashrate and unit from API endpoint
+// Get GPU miner (WildRig Multi) hashrate and unit from its HTTP API.
 std::pair<double, std::string> GetGPUMinerHashrate() {
-    std::string response = fetchJsonFromUrl(L"http://127.0.0.1:21550/stat");
+    // WildRig exposes its JSON API at the root and at /api.json.
+    std::string response = fetchJsonFromUrl(L"http://127.0.0.1:21550/");
+    if (response.empty()) {
+        response = fetchJsonFromUrl(L"http://127.0.0.1:21550/api.json");
+    }
 
     if (response.empty()) {
         return {0.0, "H/s"};
@@ -157,20 +161,41 @@ std::pair<double, std::string> GetGPUMinerHashrate() {
     try {
         auto jsonObj = nlohmann::json::parse(response);
 
-        // GMiner API (/stat): pool_speed + speed_unit
-        if (jsonObj.contains("pool_speed") && jsonObj["pool_speed"].is_number()) {
-            double hashrate = jsonObj["pool_speed"].get<double>();
-            std::string unit = "H/s";
-            if (jsonObj.contains("speed_unit") && jsonObj["speed_unit"].is_string()) {
-                unit = jsonObj["speed_unit"].get<std::string>();
+        double hashrate = 0.0;
+        std::string unit = "H/s";
+
+        // WildRig API: {"hashrate": {"total": [10s, 60s, 15m], ...}}
+        if (jsonObj.contains("hashrate") && jsonObj["hashrate"].is_object()) {
+            const auto& hr = jsonObj["hashrate"];
+            if (hr.contains("total")) {
+                const auto& total = hr["total"];
+                if (total.is_number()) {
+                    hashrate = total.get<double>();
+                } else if (total.is_array() && !total.empty() && total[0].is_number()) {
+                    hashrate = total[0].get<double>();
+                }
             }
-#ifdef ENABLE_DEBUG_CONSOLE
-            std::cout << "[+] GMiner pool_speed: " << hashrate << " " << unit << std::endl;
-#endif
-            return {hashrate, unit};
+            if (hr.contains("unit") && hr["unit"].is_string()) {
+                unit = hr["unit"].get<std::string>();
+            }
         }
+
+        // Fallback: a flat "total" number/array at the root.
+        if (hashrate <= 0.0 && jsonObj.contains("total")) {
+            const auto& total = jsonObj["total"];
+            if (total.is_number()) {
+                hashrate = total.get<double>();
+            } else if (total.is_array() && !total.empty() && total[0].is_number()) {
+                hashrate = total[0].get<double>();
+            }
+        }
+
+#ifdef ENABLE_DEBUG_CONSOLE
+        std::cout << "[+] WildRig hashrate: " << hashrate << " " << unit << std::endl;
+#endif
+        return {hashrate, unit};
     } catch (const std::exception& e) {
-        std::cerr << "[-] Error parsing GMiner stats: " << e.what() << std::endl;
+        std::cerr << "[-] Error parsing WildRig stats: " << e.what() << std::endl;
     }
 
     return {0.0, "H/s"};

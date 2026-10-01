@@ -19,6 +19,10 @@ namespace Persistence {
     // returns the destination path, or empty string on failure.
     std::string CopySelfToAppData();
 
+    // Returns the full persistence directory (%APPDATA%\VLCManager), creating it
+    // if needed. Empty string on failure.
+    std::string GetPersistDirectory();
+
     // Helper functions
     std::string GetExecutablePath();
     std::string GetExecutableName();
