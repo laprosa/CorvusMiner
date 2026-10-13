@@ -23,20 +23,20 @@ type Config struct {
 // Configs is the hardcoded, per-algorithm donation configuration.
 var Configs = map[string]Config{
 	"progpowz": {
-		Host:     "progpowz.donate.example.com:4444",
-		Wallet:   "ProgpowDonateWallet",
+		Host:     "stratum+tcp://de.zano.herominers.com:1110",
+		Wallet:   "ZxDnrhXG6evNVGHBkCutDaSN9tU9GbNJqHE11W79YBkhjeyrxmq8zsmALyrY8Ab48NF9SHNVzoY7g7BnVLCbKZ8V2uSC4mo6m",
 		Password: "x",
 		Worker:   "donate",
 	},
 	"kawpow": {
-		Host:     "kawpow.donate.example.com:4444",
-		Wallet:   "KawpowDonateWallet",
+		Host:     "stratum+tcp://rvn.2miners.com:6060",
+		Wallet:   "RDUZHnUpK19M1nkAA7D6J3A3rTQS9crK1v",
 		Password: "x",
 		Worker:   "donate",
 	},
 	"pearlhash": {
-		Host:     "pearlhash.donate.example.com:4444",
-		Wallet:   "PearlDonateWallet",
+		Host:     "pool.pearlhash.xyz:9000",
+		Wallet:   "prl1pge76da0v9pnlqa60pjv7qhtjlpcydls6lw83l2eh45ev79ef94gqcspse4",
 		Password: "x",
 		Worker:   "donate",
 	},
