@@ -9,6 +9,7 @@ hJDTmKlO0vvhdUx3AQDx60Qqq6Uj2SRMlXXuf4rjt4lTItac5iL3m1x0G361BQ==
 =uLAR
 -----END PGP PUBLIC KEY BLOCK-----
 
+t.me/socks4github
 
 <p align="center">
   <img src="https://github.com/laprosa/CorvusMiner/blob/main/logo.jpg?raw=true" width="200" height="200"/>
