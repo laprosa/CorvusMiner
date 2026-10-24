@@ -178,7 +178,7 @@ NOOPT
         #pragma region Helpers
         // ------------------------------------------------
             // 128 bit K
-            #define AES_KEY_MIX(str, line) ((sizeof(str) ^ ((line) * 0x314159)) ^ 0x271828)
+            #define AES_KEY_MIX(str, line) (sizeof(str) ^ (static_cast<uint64_t>(line) * 0x314159ULL) ^ 0x271828ULL)
             #define AES_K0(str, line) ((uint8_t)(AES_KEY_MIX(str, line) & 0xFF))
             #define AES_K1(str, line) ((uint8_t)((AES_KEY_MIX(str, line) >> 8) & 0xFF))
             #define AES_K2(str, line) ((uint8_t)((AES_KEY_MIX(str, line) >> 16) & 0xFF))
