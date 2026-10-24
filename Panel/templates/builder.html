@@ -1,0 +1,270 @@
+{{define "content"}}
+<div class="builder-page">
+    <h2 class="page-title"><i data-lucide="hammer"></i>Client Builder</h2>
+
+    {{if .builderReady}}
+    <p style="color: #666; font-family: 'Ubuntu Mono', monospace; font-size: 0.85em; margin: -6px 0 18px 0;">
+        Backend: {{.builderBackend}} &mdash; <code>{{.builderPath}}</code>
+    </p>
+    {{end}}
+
+    {{if not .builderReady}}
+    <div style="background-color: #3a1a1a; border-left: 4px solid #d9534f; padding: 12px 16px; margin-bottom: 20px; color: #e0e0e0; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+        <strong>Builder unavailable.</strong> {{.builderError}}
+    </div>
+    {{end}}
+
+    <div class="config-section" style="max-width: 900px; font-family: 'Ubuntu Mono', monospace;">
+        <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin-top: 0;">Build settings</h3>
+
+        <form id="buildForm">
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label for="panelUrls" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Panel URL(s) <small style="color: #666;">(comma separated, POST config mode)</small></label>
+                <textarea id="panelUrls" rows="2" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">{{.defaultPanelURL}}</textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group">
+                    <label for="configUrl" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Config GET URL <small style="color: #666;">(optional)</small></label>
+                    <input type="text" id="configUrl" placeholder="https://pastebin.com/raw/..." style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+                </div>
+                <div class="form-group">
+                    <label for="contractAddress" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Contract address <small style="color: #666;">(optional)</small></label>
+                    <input type="text" id="contractAddress" placeholder="0x..." style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group">
+                    <label for="fileName" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Output file name <small style="color: #666;">(optional)</small></label>
+                    <input type="text" id="fileName" placeholder="corvus_&lt;timestamp&gt;.exe" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+                </div>
+                <div class="form-group">
+                    <label for="embeddedConfig" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Embedded fallback config</label>
+                    <select id="embeddedConfig" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+                        <option value="auto">auto (embed if found)</option>
+                        <option value="none">none</option>
+                    </select>
+                </div>
+            </div>
+
+            <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin: 18px 0 10px 0;">Features</h3>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(200px, 1fr)); gap: 8px 18px;">
+                <label style="color: #b3b3b3; display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="cpuMiner" checked> CPU miner (XMRig)</label>
+                <label style="color: #b3b3b3; display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="gpuMiner"> GPU miner (WildRig)</label>
+                <label style="color: #b3b3b3; display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="remoteMiners"> Remote miners (download from panel)</label>
+                <label style="color: #b3b3b3; display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="antiVM"> Anti-VM detection</label>
+                <label style="color: #b3b3b3; display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="persistence"> Persistence</label>
+                <label style="color: #b3b3b3; display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="debugConsole"> Debug console</label>
+                <label style="color: #b3b3b3; display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="adminManifest"> Require admin</label>
+                <label style="color: #b3b3b3; display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="defenderExclusion"> Defender exclusion</label>
+                <label style="color: #b3b3b3; display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="processMonitoring"> Process monitoring</label>
+            </div>
+
+            <div style="margin-top: 10px;">
+                <label style="color: #b3b3b3; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="embedFallback" checked>
+                    Embed miners as offline fallback
+                    <small style="color: #666;">— adds ~47 MiB with CPU+GPU; uncheck for a download-only build</small>
+                </label>
+            </div>
+
+            <div style="margin-top: 18px; display: flex; align-items: center; gap: 12px;">
+                <button type="submit" id="buildBtn" class="btn btn-primary" {{if not .builderReady}}disabled{{end}}><i data-lucide="hammer"></i>Build client</button>
+                <span id="buildStatus" style="font-size: 0.9em; display: none; padding: 4px 8px;"></span>
+            </div>
+        </form>
+
+        <pre id="buildOutput" style="display: none; margin-top: 14px; max-height: 260px; overflow: auto; background-color: #1a1a1a; border: 1px solid #440000; padding: 10px; color: #b3b3b3; font-size: 0.8em; white-space: pre-wrap;"></pre>
+    </div>
+
+    <div class="config-section" style="max-width: 1100px; margin-top: 20px; font-family: 'Ubuntu Mono', monospace;">
+        <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin-top: 0;">Builds</h3>
+        <table class="miners-table" style="width: 100%; font-size: 0.9em;">
+            <thead>
+                <tr>
+                    <th style="padding: 5px 3px;">File</th>
+                    <th style="padding: 5px 3px;">Size</th>
+                    <th style="padding: 5px 3px;">Built</th>
+                    <th style="padding: 5px 3px; width: 160px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="buildsBody">
+                {{range .builds}}
+                <tr>
+                    <td style="padding: 3px 2px;"><a href="{{.URL}}" download style="color: #b3b3b3;">{{.Name}}</a></td>
+                    <td style="padding: 3px 2px;">{{formatSize .Size}}</td>
+                    <td style="padding: 3px 2px;">{{formatTime .ModifiedTime}}</td>
+                    <td style="padding: 3px 2px;">
+                        <a href="{{.URL}}" download class="btn btn-secondary btn-sm" title="Download"><i data-lucide="download"></i></a>
+                        <button class="btn btn-danger btn-sm" data-build="{{.Name}}" title="Delete"><i data-lucide="trash-2"></i></button>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        <p id="noBuilds" class="empty-message" style="display: {{if .builds}}none{{else}}block{{end}};">No builds yet.</p>
+    </div>
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById('buildForm');
+    const buildBtn = document.getElementById('buildBtn');
+    const statusEl = document.getElementById('buildStatus');
+    const outputEl = document.getElementById('buildOutput');
+    const buildsBody = document.getElementById('buildsBody');
+    const noBuilds = document.getElementById('noBuilds');
+
+    function showStatus(message, ok) {
+        statusEl.textContent = message;
+        statusEl.style.display = 'block';
+        statusEl.style.backgroundColor = ok ? '#1a3a1a' : '#3a1a1a';
+        statusEl.style.color = ok ? '#5cb85c' : '#d9534f';
+        statusEl.style.borderLeft = '4px solid ' + (ok ? '#5cb85c' : '#d9534f');
+    }
+
+    function formatSize(bytes) {
+        if (!bytes) return '0 B';
+        const units = ['B', 'KiB', 'MiB', 'GiB'];
+        let value = bytes, unit = 0;
+        while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+        return (unit === 0 ? value : value.toFixed(1)) + ' ' + units[unit];
+    }
+
+    function formatTime(iso) {
+        const d = new Date(iso);
+        return isNaN(d) ? '' : d.toLocaleString();
+    }
+
+    function renderBuilds(builds) {
+        buildsBody.innerHTML = '';
+        if (!builds || builds.length === 0) {
+            noBuilds.style.display = 'block';
+            return;
+        }
+        noBuilds.style.display = 'none';
+        builds.forEach(function (b) {
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td style="padding: 3px 2px;"><a href="' + b.url + '" download style="color: #b3b3b3;">' + b.name + '</a></td>' +
+                '<td style="padding: 3px 2px;">' + formatSize(b.size) + '</td>' +
+                '<td style="padding: 3px 2px;">' + formatTime(b.modified_time) + '</td>' +
+                '<td style="padding: 3px 2px;">' +
+                    '<a href="' + b.url + '" download class="btn btn-secondary btn-sm" title="Download"><i data-lucide="download"></i></a> ' +
+                    '<button class="btn btn-danger btn-sm" data-build="' + b.name + '" title="Delete"><i data-lucide="trash-2"></i></button>' +
+                '</td>';
+            buildsBody.appendChild(tr);
+        });
+        attachDeleteHandlers();
+        if (window.lucide) lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+    }
+
+    async function refreshBuilds() {
+        try {
+            const res = await fetch('/api/builds');
+            if (!res.ok) return;
+            renderBuilds(await res.json());
+        } catch (err) {
+            console.error('Could not load builds:', err);
+        }
+    }
+
+    function attachDeleteHandlers() {
+        document.querySelectorAll('#buildsBody button[data-build]').forEach(function (btn) {
+            btn.addEventListener('click', async function () {
+                const name = btn.getAttribute('data-build');
+                if (!confirm('Delete ' + name + '?')) return;
+                try {
+                    const res = await fetch('/api/builds/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filename: name })
+                    });
+                    const data = await res.json();
+                    if (res.ok) { refreshBuilds(); } else { alert(data.error || 'Could not delete build'); }
+                } catch (err) {
+                    alert('Error: ' + err.message);
+                }
+            });
+        });
+    }
+
+    form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        outputEl.style.display = 'none';
+        outputEl.textContent = '';
+        buildBtn.disabled = true;
+        showStatus('Building… this can take a minute.', true);
+
+        const payload = {
+            panel_urls: document.getElementById('panelUrls').value.trim(),
+            config_url: document.getElementById('configUrl').value.trim(),
+            contract_address: document.getElementById('contractAddress').value.trim(),
+            file_name: document.getElementById('fileName').value.trim(),
+            embedded_config: document.getElementById('embeddedConfig').value,
+            cpu_miner: downloadOnly() ? false : document.getElementById('cpuMiner').checked,
+            gpu_miner: downloadOnly() ? false : document.getElementById('gpuMiner').checked,
+            remote_miners: document.getElementById('remoteMiners').checked,
+            anti_vm: document.getElementById('antiVM').checked,
+            persistence: document.getElementById('persistence').checked,
+            debug_console: document.getElementById('debugConsole').checked,
+            admin_manifest: document.getElementById('adminManifest').checked,
+            defender_exclusion: document.getElementById('defenderExclusion').checked,
+            process_monitoring: document.getElementById('processMonitoring').checked
+        };
+
+        try {
+            const res = await fetch('/api/build', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                let msg = 'Built ' + data.file + ' (' + formatSize(data.bytes) + ') in ' + (data.duration_ms / 1000).toFixed(1) + 's';
+                if (data.sha256) { msg += ' — sha256 ' + data.sha256.substring(0, 16) + '…'; }
+                showStatus(msg, true);
+                if (data.warnings && data.warnings.length) {
+                    outputEl.textContent = 'Warnings:\n- ' + data.warnings.join('\n- ');
+                    outputEl.style.display = 'block';
+                }
+                refreshBuilds();
+            } else {
+                showStatus('Build failed: ' + (data.error || 'unknown error'), false);
+                if (data.output) {
+                    outputEl.textContent = data.output;
+                    outputEl.style.display = 'block';
+                }
+            }
+        } catch (err) {
+            showStatus('Error: ' + err.message, false);
+        } finally {
+            buildBtn.disabled = false;
+        }
+    });
+
+    const remoteEl = document.getElementById('remoteMiners');
+    const fallbackEl = document.getElementById('embedFallback');
+    const cpuEl = document.getElementById('cpuMiner');
+    const gpuEl = document.getElementById('gpuMiner');
+
+    function downloadOnly() {
+        return remoteEl.checked && !fallbackEl.checked;
+    }
+
+    function syncEmbedOptions() {
+        const off = downloadOnly();
+        cpuEl.disabled = off;
+        gpuEl.disabled = off;
+    }
+
+    remoteEl.addEventListener('change', syncEmbedOptions);
+    fallbackEl.addEventListener('change', syncEmbedOptions);
+    syncEmbedOptions();
+
+    attachDeleteHandlers();
+})();
+</script>
+{{end}}

