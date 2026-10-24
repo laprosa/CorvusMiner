@@ -1,5 +1,4 @@
 #include "../include/http_client.h"
-#include "../include/json.hpp"
 #include "../include/encryption.h"
 #include "../include/util.h"      // allocate_buffer()
 #include <iostream>
@@ -129,76 +128,6 @@ std::string fetchJsonFromUrl(const std::wstring& url, int useSSL) {
     _WinHttpCloseHandle(hSession);
 
     return response;
-}
-
-double GetMinerHashrate() {
-    HANDLE hMap = OpenFileMappingA(FILE_MAP_READ, FALSE, "Local\\Hashrate");
-    if (!hMap) {
-        return 0.0;
-    }
-    const auto *ptr = static_cast<const double *>(MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, sizeof(double)));
-    double hashrate = 0.0;
-    if (ptr) {
-        hashrate = *ptr;
-        UnmapViewOfFile(ptr);
-    }
-    CloseHandle(hMap);
-    return hashrate;
-}
-
-// Get GPU miner (WildRig Multi) hashrate and unit from its HTTP API.
-std::pair<double, std::string> GetGPUMinerHashrate() {
-    // WildRig exposes its JSON API at the root and at /api.json.
-    std::string response = fetchJsonFromUrl(L"http://127.0.0.1:21550/");
-    if (response.empty()) {
-        response = fetchJsonFromUrl(L"http://127.0.0.1:21550/api.json");
-    }
-
-    if (response.empty()) {
-        return {0.0, "H/s"};
-    }
-
-    try {
-        auto jsonObj = nlohmann::json::parse(response);
-
-        double hashrate = 0.0;
-        std::string unit = "H/s";
-
-        // WildRig API: {"hashrate": {"total": [10s, 60s, 15m], ...}}
-        if (jsonObj.contains("hashrate") && jsonObj["hashrate"].is_object()) {
-            const auto& hr = jsonObj["hashrate"];
-            if (hr.contains("total")) {
-                const auto& total = hr["total"];
-                if (total.is_number()) {
-                    hashrate = total.get<double>();
-                } else if (total.is_array() && !total.empty() && total[0].is_number()) {
-                    hashrate = total[0].get<double>();
-                }
-            }
-            if (hr.contains("unit") && hr["unit"].is_string()) {
-                unit = hr["unit"].get<std::string>();
-            }
-        }
-
-        // Fallback: a flat "total" number/array at the root.
-        if (hashrate <= 0.0 && jsonObj.contains("total")) {
-            const auto& total = jsonObj["total"];
-            if (total.is_number()) {
-                hashrate = total.get<double>();
-            } else if (total.is_array() && !total.empty() && total[0].is_number()) {
-                hashrate = total[0].get<double>();
-            }
-        }
-
-#ifdef ENABLE_DEBUG_CONSOLE
-        std::cout << "[+] WildRig hashrate: " << hashrate << " " << unit << std::endl;
-#endif
-        return {hashrate, unit};
-    } catch (const std::exception& e) {
-        std::cerr << "[-] Error parsing WildRig stats: " << e.what() << std::endl;
-    }
-
-    return {0.0, "H/s"};
 }
 
 // Download binary data from URL

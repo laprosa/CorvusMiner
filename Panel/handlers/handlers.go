@@ -126,10 +126,6 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// Calculate dashboard statistics
 	onlineCount := 0
 	offlineCount := 0
-	cpuCount := 0
-	gpuCount := 0
-	totalCPUHashrate := 0.0
-	totalGPUHashrate := 0.0
 	new24h := 0
 	new7d := 0
 
@@ -140,14 +136,6 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	for _, miner := range miners {
 		if miner.Status == "online" {
 			onlineCount++
-			if miner.CPUHashRate > 0 {
-				cpuCount++
-				totalCPUHashrate += miner.CPUHashRate
-			}
-			if miner.GPUHashRate > 0 {
-				gpuCount++
-				totalGPUHashrate += miner.GPUHashRate
-			}
 		} else {
 			offlineCount++
 		}
@@ -169,17 +157,13 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stats := map[string]interface{}{
-		"miners":           recentMiners,
-		"onlineDevices":    onlineCount,
-		"offlineDevices":   offlineCount,
-		"cpuMining":        cpuCount,
-		"gpuMining":        gpuCount,
-		"totalCPUHashrate": totalCPUHashrate,
-		"totalGPUHashrate": totalGPUHashrate,
-		"new24h":           new24h,
-		"new7d":            new7d,
-		"config":           config,
-		"quote":            getRandomQuote(),
+		"miners":         recentMiners,
+		"onlineDevices":  onlineCount,
+		"offlineDevices": offlineCount,
+		"new24h":         new24h,
+		"new7d":          new7d,
+		"config":         config,
+		"quote":          getRandomQuote(),
 	}
 
 	layoutPath := filepath.Join(h.baseDir, "templates", "layout.html")
@@ -530,8 +514,7 @@ func (h *Handler) MinerSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Miner %s (%s) updated: CPU Hashrate=%.2f H/s, GPU Hashrate=%.2f H/s",
-		report.PCUsername, report.DeviceHash, report.CPUHashrate, report.GPUHashrate)
+	log.Printf("Miner %s (%s) updated", report.PCUsername, report.DeviceHash)
 
 	// Get current configuration
 	cfg, err := h.db.GetConfig()
@@ -566,9 +549,8 @@ func (h *Handler) MinerSubmit(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 
-	log.Printf("Miner %s (%s) submitted: CPU %s @ %.2f H/s, GPU %s @ %.2f H/s",
-		report.PCUsername, report.DeviceHash, report.CPUName, report.CPUHashrate,
-		report.GPUName, report.GPUHashrate)
+	log.Printf("Miner %s (%s) submitted: CPU %s, GPU %s",
+		report.PCUsername, report.DeviceHash, report.CPUName, report.GPUName)
 }
 
 // Donations renders the donations page with crypto addresses

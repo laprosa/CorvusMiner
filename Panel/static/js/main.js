@@ -32,7 +32,6 @@ function updateMinersTable(miners) {
             <td>${miner.ip}</td>
             <td>${miner.port}</td>
             <td><span class="status ${miner.status}">${miner.status}</span></td>
-            <td>${miner.hashrate}</td>
             <td>${miner.shares}</td>
             <td>
                 <button class="btn btn-danger btn-sm delete-miner" data-id="${miner.id}">Delete</button>

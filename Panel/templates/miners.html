@@ -82,8 +82,6 @@
                     <th style="padding: 5px 3px; width: 120px;">Device Hash<div class="resize-handle"></div></th>
                     <th style="padding: 5px 3px; width: 100px;">CPU<div class="resize-handle"></div></th>
                     <th style="padding: 5px 3px; width: 100px;">GPU<div class="resize-handle"></div></th>
-                    <th style="padding: 5px 3px; width: 70px;">CPU H/s<div class="resize-handle"></div></th>
-                    <th style="padding: 5px 3px; width: 70px;">GPU H/s<div class="resize-handle"></div></th>
                     <th style="padding: 5px 3px; width: 80px;">Antivirus<div class="resize-handle"></div></th>
                     <th style="padding: 5px 3px; width: 60px;">Uptime<div class="resize-handle"></div></th>
                     <th style="padding: 5px 3px; width: 70px;">Client Ver<div class="resize-handle"></div></th>
@@ -98,8 +96,6 @@
                     <td style="padding: 3px 2px;"><code style="font-size: 0.85em;">{{.DeviceHash}}</code></td>
                     <td style="padding: 3px 2px;">{{.CPUName}}</td>
                     <td style="padding: 3px 2px;">{{.GPUName}}</td>
-                    <td style="padding: 3px 2px;"><span class="hashrate" data-value="{{.CPUHashRate}}">{{printf "%.2f" .CPUHashRate}} H/s</span></td>
-                    <td style="padding: 3px 2px;"><span class="hashrate" data-value="{{.GPUHashRate}}">{{printf "%.2f" .GPUHashRate}} H/s</span></td>
                     <td style="padding: 3px 2px;">{{.AntivirusName}}</td>
                     <td style="padding: 3px 2px;"><span class="uptime" data-minutes="{{.DeviceUptimeMin}}">{{formatUptime .DeviceUptimeMin}}</span></td>
                     <td style="padding: 3px 2px;">{{.ClientVersion}}</td>
@@ -130,14 +126,6 @@ let currentPage = 1;
 let allRows = [];
 let filteredRows = [];
 
-// Format hashrate to appropriate unit
-function formatHashrate(value) {
-    if (value === 0 || isNaN(value)) return '0 H/s';
-    if (value >= 1000000) return (value / 1000000).toFixed(2) + ' MH/s';
-    if (value >= 1000) return (value / 1000).toFixed(2) + ' KH/s';
-    return value.toFixed(2) + ' H/s';
-}
-
 // Format uptime in minutes to hours and minutes
 function formatUptime(minutes) {
     if (minutes === 0 || isNaN(minutes)) return '0m';
@@ -160,7 +148,7 @@ function initializeColumnResizing() {
     const ths = table.querySelectorAll('th');
     
     // Load saved column widths
-    const savedWidths = localStorage.getItem('minersTableColumnWidths');
+    const savedWidths = localStorage.getItem('minersTableColumnWidthsV2');
     if (savedWidths) {
         const widths = JSON.parse(savedWidths);
         ths.forEach((th, idx) => {
@@ -205,7 +193,7 @@ function initializeColumnResizing() {
                 
                 // Save column widths to localStorage
                 const widths = Array.from(ths).map(t => t.offsetWidth);
-                localStorage.setItem('minersTableColumnWidths', JSON.stringify(widths));
+                localStorage.setItem('minersTableColumnWidthsV2', JSON.stringify(widths));
             }
         });
     });
@@ -219,12 +207,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const deleteStaleBtn = document.getElementById('deleteStaleBtn');
     const staleMinersInput = document.getElementById('staleMinersInput');
     const deleteStaleStatus = document.getElementById('deleteStaleStatus');
-
-    // Format all hashrates
-    document.querySelectorAll('.hashrate[data-value]').forEach(el => {
-        const value = parseFloat(el.dataset.value);
-        el.textContent = formatHashrate(value);
-    });
 
     // Format all uptimes
     document.querySelectorAll('.uptime[data-minutes]').forEach(el => {
@@ -348,25 +330,18 @@ async function refreshMiners() {
         miners.forEach(miner => {
             const row = document.querySelector(`tr[data-miner-id="${miner.id}"]`);
             if (row) {
-                // Update hashrate cells
                 const cells = row.querySelectorAll('td');
+                // Update uptime (index 5)
+                if (cells.length >= 6) {
+                    cells[5].textContent = formatUptime(miner.device_uptime_min);
+                }
+                // Update client version (index 6)
                 if (cells.length >= 7) {
-                    // CPU Hashrate (index 4)
-                    cells[4].textContent = formatHashrate(miner.cpu_hashrate);
-                    // GPU Hashrate (index 5)
-                    cells[5].textContent = formatHashrate(miner.gpu_hashrate);
+                    cells[6].textContent = miner.client_version || '2.3.0';
                 }
-                // Update uptime (index 7)
+                // Update status (index 7)
                 if (cells.length >= 8) {
-                    cells[7].textContent = formatUptime(miner.device_uptime_min);
-                }
-                // Update client version (index 8)
-                if (cells.length >= 9) {
-                    cells[8].textContent = miner.client_version || '2.3.0';
-                }
-                // Update status (index 9)
-                if (cells.length >= 10) {
-                    cells[9].innerHTML = '<span class="status ' + miner.status + '" style="font-size: 0.9em; padding: 2px 4px;">' + miner.status + '</span>';
+                    cells[7].innerHTML = '<span class="status ' + miner.status + '" style="font-size: 0.9em; padding: 2px 4px;">' + miner.status + '</span>';
                 }
             }
         });
