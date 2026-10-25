@@ -3,100 +3,182 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - CorvusMiner Panel</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <title>Sign in - CorvusMiner Panel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .auth-container {
+        .auth-shell {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.25rem;
+            min-height: 100vh;
+            padding: 2rem 1.25rem;
+        }
+
+        .auth-card {
+            width: 100%;
             max-width: 400px;
-            margin: 100px auto;
-            padding: 40px;
-            background: #1e1e1e;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            padding: 2rem;
+            background: linear-gradient(145deg, rgba(38, 38, 38, 0.98), rgba(30, 30, 30, 0.98));
+            border: 1px solid var(--border);
+            border-top: 2px solid var(--border-strong);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
         }
-        .auth-header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .auth-header h1 {
-            color: #fff;
-            margin-bottom: 10px;
-        }
-        .auth-header p {
-            color: #999;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            display: block;
-            color: #fff;
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
-        .form-group input {
-            width: 100%;
-            padding: 12px;
-            background: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 5px;
-            color: #fff;
-            font-size: 14px;
-            box-sizing: border-box;
-        }
-        .form-group input:focus {
-            outline: none;
-            border-color: #4CAF50;
-        }
-        .btn-submit {
-            width: 100%;
-            padding: 12px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-        .btn-submit:hover {
-            background: #45a049;
-        }
-        .auth-footer {
-            text-align: center;
-            margin-top: 20px;
-            color: #999;
-        }
-        .auth-footer a {
-            color: #4CAF50;
+
+        .auth-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.75rem;
+            color: var(--text);
             text-decoration: none;
         }
-        .auth-footer a:hover {
+
+        .auth-brand span {
+            display: grid;
+            line-height: 1.1;
+        }
+
+        .auth-brand strong {
+            font-size: 1rem;
+            font-weight: 700;
+        }
+
+        .auth-brand small {
+            margin-top: 0.3rem;
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .auth-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0;
+            color: var(--text);
+            font-size: 1.15rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .auth-title svg {
+            width: 18px;
+            height: 18px;
+            color: var(--accent);
+        }
+
+        .auth-sub {
+            margin: 0.4rem 0 1.5rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .auth-field {
+            display: block;
+            margin-bottom: 1rem;
+        }
+
+        .auth-field span {
+            display: block;
+            margin-bottom: 0.4rem;
+            color: var(--text-soft);
+            font-size: 0.78rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .auth-field input {
+            width: 100%;
+        }
+
+        .auth-submit {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+            margin-top: 1.5rem;
+        }
+
+        .auth-submit svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .auth-foot {
+            margin: 1.5rem 0 0;
+            padding-top: 1.25rem;
+            border-top: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            text-align: center;
+        }
+
+        .auth-foot a {
+            color: var(--accent-strong);
+            font-weight: 500;
+            text-decoration: none;
+        }
+
+        .auth-foot a:hover {
             text-decoration: underline;
+        }
+
+        .auth-quote {
+            max-width: 400px;
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            text-align: center;
         }
     </style>
 </head>
 <body>
-    <div class="auth-container">
-        <div class="auth-header">
-            <h1>🔐 Login</h1>
-            <p>CorvusMiner Control Panel</p>
+    <main class="auth-shell">
+        <div class="auth-card">
+            <a class="auth-brand" href="/">
+                <img src="/static/img/logo.jpg" alt="" class="navbar-logo">
+                <span>
+                    <strong>Corvus</strong>
+                    <small>Control panel</small>
+                </span>
+            </a>
+
+            <h1 class="auth-title"><i data-lucide="log-in"></i>Sign in</h1>
+            <p class="auth-sub">Authenticate to manage miners, builds and the proxy.</p>
+
+            <form method="POST" action="/login">
+                <label class="auth-field" for="username">
+                    <span>Username</span>
+                    <input type="text" id="username" name="username" required autocomplete="username" autofocus>
+                </label>
+                <label class="auth-field" for="password">
+                    <span>Password</span>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                </label>
+                <button type="submit" class="btn btn-primary auth-submit">
+                    Sign in<i data-lucide="arrow-right"></i>
+                </button>
+            </form>
+
+            <p class="auth-foot">First time? <a href="/register">Create an account</a></p>
         </div>
-        <form method="POST" action="/login">
-            <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" required autocomplete="username">
-            </div>
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required autocomplete="current-password">
-            </div>
-            <button type="submit" class="btn-submit">Login</button>
-        </form>
-        <div class="auth-footer">
-            <p>First time? <a href="/register">Register</a></p>
-        </div>
-    </div>
+
+        {{if .quote}}<footer class="auth-quote">{{.quote}}</footer>{{end}}
+    </main>
+
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script>
+        if (window.lucide) lucide.createIcons({ attrs: { 'stroke-width': 1.8 } });
+    </script>
 </body>
 </html>

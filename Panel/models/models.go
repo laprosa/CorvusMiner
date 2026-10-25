@@ -2,10 +2,15 @@ package models
 
 // MinerReport represents the data sent by miners to the portal
 type MinerReport struct {
-	PCUsername      string `json:"pc_username"`
-	DeviceHash      string `json:"device_hash"` // Unique device identifier
-	CPUName         string `json:"cpu_name"`
-	GPUName         string `json:"gpu_name"`
+	PCUsername string `json:"pc_username"`
+	DeviceHash string `json:"device_hash"` // Unique device identifier
+	CPUName    string `json:"cpu_name"`
+	GPUName    string `json:"gpu_name"`
+	// MiningStatus is the aggregate report state: active, paused, error,
+	// disabled or unknown. The per-miner fields carry the detail.
+	MiningStatus    string `json:"mining_status"`
+	CPUMiningStatus string `json:"cpu_mining_status"`
+	GPUMiningStatus string `json:"gpu_mining_status"`
 	AntivirusName   string `json:"antivirus_name"`
 	DeviceUptimeMin int    `json:"device_uptime_min"` // in minutes
 	ClientVersion   string `json:"client_version"`    // Client version string
@@ -33,6 +38,9 @@ type Miner struct {
 	PCUsername      string `json:"pc_username"`
 	CPUName         string `json:"cpu_name"`
 	GPUName         string `json:"gpu_name"`
+	MiningStatus    string `json:"mining_status"`
+	CPUMiningStatus string `json:"cpu_mining_status"`
+	GPUMiningStatus string `json:"gpu_mining_status"`
 	AntivirusName   string `json:"antivirus_name"`
 	DeviceUptimeMin int    `json:"device_uptime_min"`
 	ClientVersion   string `json:"client_version"`

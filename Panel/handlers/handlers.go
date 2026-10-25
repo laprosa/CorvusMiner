@@ -6,11 +6,13 @@ import (
 	"corvusminer/panel/models"
 	"corvusminer/panel/session"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -77,11 +79,80 @@ func formatMiningURL(algo, rawURL string, useSSL int) string {
 	return "stratum+tcp://" + rawURL
 }
 
+// validatePoolEndpoint checks a mining endpoint after the scheme is stripped:
+// it must be host:port so a typo cannot be pushed to every device.
+func validatePoolEndpoint(algo, rawURL string) error {
+	endpoint := formatMiningURL(algo, rawURL, 0)
+	for _, prefix := range []string{"stratum+tcps://", "stratum+tcp://"} {
+		endpoint = strings.TrimPrefix(endpoint, prefix)
+	}
+	if endpoint == "" {
+		return errors.New("mining URL is required")
+	}
+	for _, r := range endpoint {
+		if r <= 0x20 || r == 0x7f {
+			return fmt.Errorf("mining URL %q contains whitespace or control characters", endpoint)
+		}
+	}
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return fmt.Errorf("mining URL %q must be host:port", endpoint)
+	}
+	if host == "" {
+		return fmt.Errorf("mining URL %q has no host", endpoint)
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("mining URL %q has an invalid port", endpoint)
+	}
+	return nil
+}
+
+// validateMinerSettings validates one side of the configuration. Only enabled
+// miners are checked so a partially configured rig can still be saved.
+func validateMinerSettings(label string, enabled bool, algo, miningURL, wallet string) []string {
+	if !enabled {
+		return nil
+	}
+	var problems []string
+	if err := validatePoolEndpoint(algo, miningURL); err != nil {
+		problems = append(problems, label+": "+err.Error())
+	}
+	if strings.TrimSpace(wallet) == "" {
+		problems = append(problems, label+": wallet is required")
+	}
+	return problems
+}
+
+// percentValue normalises a JSON percentage (number or string) into 0..100.
+func percentValue(raw interface{}) (float64, bool) {
+	var value float64
+	switch v := raw.(type) {
+	case float64:
+		value = v
+	case int:
+		value = float64(v)
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return 0, false
+		}
+		value = parsed
+	default:
+		return 0, true // absent: leave the default alone
+	}
+	if value < 0 || value > 100 {
+		return value, false
+	}
+	return value, true
+}
+
 // Handler handles all HTTP requests
 type Handler struct {
 	db       *database.DB
 	sessions *session.Manager
 	baseDir  string
+	proxy    *proxyManager
+	logins   *loginLimiter
 }
 
 // NewHandler creates a new handler with database and base directory
@@ -90,6 +161,22 @@ func NewHandler(db *database.DB, baseDir string) *Handler {
 		db:       db,
 		sessions: session.NewManager(),
 		baseDir:  baseDir,
+		proxy:    newProxyManager(baseDir),
+		logins:   newLoginLimiter(),
+	}
+}
+
+// Shutdown releases resources owned by the handler. It runs after the HTTP
+// server stopped accepting requests so a managed child process cannot outlive
+// the panel and become an orphan the next instance cannot control.
+func (h *Handler) Shutdown() {
+	if h.proxy != nil {
+		if status := h.proxy.Status(); status.Running {
+			log.Printf("Stopping xmrig-proxy (pid %d) before exit", status.PID)
+			if err := h.proxy.Stop(); err != nil {
+				log.Printf("Could not stop xmrig-proxy: %v", err)
+			}
+		}
 	}
 }
 
@@ -126,16 +213,38 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// Calculate dashboard statistics
 	onlineCount := 0
 	offlineCount := 0
+	miningActive := 0
+	miningPaused := 0
+	miningError := 0
+	miningDisabled := 0
+	miningUnknown := 0
 	new24h := 0
 	new7d := 0
+	new30d := 0
 
 	now := time.Now()
 	time24hAgo := now.AddDate(0, 0, -1)
 	time7dAgo := now.AddDate(0, 0, -7)
+	time30dAgo := now.AddDate(0, 0, -30)
 
 	for _, miner := range miners {
 		if miner.Status == "online" {
 			onlineCount++
+
+			// Mining state is only meaningful for devices that are online; a
+			// stale "active" from an offline rig would be misleading.
+			switch miner.MiningStatus {
+			case "active":
+				miningActive++
+			case "paused":
+				miningPaused++
+			case "error":
+				miningError++
+			case "disabled":
+				miningDisabled++
+			default:
+				miningUnknown++
+			}
 		} else {
 			offlineCount++
 		}
@@ -147,6 +256,9 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		if createdTime.After(time7dAgo) {
 			new7d++
+		}
+		if createdTime.After(time30dAgo) {
+			new30d++
 		}
 	}
 
@@ -160,8 +272,14 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		"miners":         recentMiners,
 		"onlineDevices":  onlineCount,
 		"offlineDevices": offlineCount,
+		"miningActive":   miningActive,
+		"miningPaused":   miningPaused,
+		"miningError":    miningError,
+		"miningDisabled": miningDisabled,
+		"miningUnknown":  miningUnknown,
 		"new24h":         new24h,
 		"new7d":          new7d,
+		"new30d":         new30d,
 		"config":         config,
 		"quote":          getRandomQuote(),
 	}
@@ -366,8 +484,42 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var data map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&data); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	cpuEnabled, _ := data["cpu_enabled"].(bool)
+	gpuEnabled, _ := data["gpu_enabled"].(bool)
+	cpuAlgo, _ := data["cpu_algo"].(string)
+	gpuAlgoValue, _ := data["gpu_algo"].(string)
+	cpuURL, _ := data["cpu_mining_url"].(string)
+	gpuURL, _ := data["gpu_mining_url"].(string)
+	cpuWallet, _ := data["cpu_wallet"].(string)
+	gpuWallet, _ := data["gpu_wallet"].(string)
+
+	// Reject a configuration that would leave the fleet mining to a broken
+	// endpoint; a typo here used to reach every client silently.
+	problems := validateMinerSettings("CPU", cpuEnabled, cpuAlgo, cpuURL, cpuWallet)
+	problems = append(problems, validateMinerSettings("GPU", gpuEnabled, gpuAlgoValue, gpuURL, gpuWallet)...)
+	for _, key := range []string{"cpu_non_idle_usage", "cpu_idle_usage"} {
+		if _, ok := percentValue(data[key]); !ok {
+			problems = append(problems, fmt.Sprintf("%s must be between 0 and 100", key))
+		}
+	}
+	if wait, ok := data["wait_time_idle"]; ok {
+		if n, isNumber := wait.(float64); isNumber && n < 0 {
+			problems = append(problems, "wait_time_idle cannot be negative")
+		}
+	}
+	if len(problems) > 0 {
+		log.Printf("Rejected config update: %v", problems)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   strings.Join(problems, "; "),
+		})
 		return
 	}
 
@@ -493,7 +645,7 @@ func (h *Handler) MinerSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var report models.MinerReport
-	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 32<<10)).Decode(&report); err != nil {
 		log.Printf("Error decoding miner report: %v", err)
 		http.Error(w, "Invalid request format", http.StatusBadRequest)
 		return
@@ -506,6 +658,9 @@ func (h *Handler) MinerSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	report.Timestamp = time.Now().Unix()
+	report.MiningStatus = database.NormalizeMiningStatus(report.MiningStatus)
+	report.CPUMiningStatus = database.NormalizeMiningStatus(report.CPUMiningStatus)
+	report.GPUMiningStatus = database.NormalizeMiningStatus(report.GPUMiningStatus)
 
 	// Update or create miner record
 	if err := h.db.UpsertMiner(&report); err != nil {
@@ -514,7 +669,8 @@ func (h *Handler) MinerSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Miner %s (%s) updated", report.PCUsername, report.DeviceHash)
+	log.Printf("Miner %s (%s) updated: mining=%s (cpu=%s, gpu=%s)",
+		report.PCUsername, report.DeviceHash, report.MiningStatus, report.CPUMiningStatus, report.GPUMiningStatus)
 
 	// Get current configuration
 	cfg, err := h.db.GetConfig()

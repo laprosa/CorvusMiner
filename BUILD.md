@@ -24,7 +24,8 @@ all settings as flags, so the panel (or any script) can drive it non-interactive
 Install the toolchain once, build the builder, then run it:
 
 ```bash
-sudo apt install cmake mingw-w64
+# installs cmake, MinGW-w64, make, python3 and Go (skips what is present)
+./BuilderCLI/install-deps.sh --check   # or run without --check to install
 
 cd BuilderCLI
 go build -trimpath -ldflags="-s -w" -o ../builder .
@@ -54,10 +55,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Builder/build.ps1 -panel_con
 `build.ps1` then stages `Client/` to `%TEMP%` (the repository is never modified),
 builds with MinGW and prints one JSON result document on stdout.
 
-Requirements on the Windows host:
+Requirements on the Windows host (one-time):
 - PowerShell 5.0+ (built in)
 - CMake and MinGW-w64 on `PATH` (`cmake`, `gcc`, `g++`, `windres`, `mingw32-make`) —
-  e.g. `choco install cmake mingw -y`. The panel never installs anything or asks for admin.
+  run `Builder\install-deps.ps1` once (uses Chocolatey or winget, skips what is present).
+  The panel itself never installs anything or asks for admin.
 - The `Builder/` folder next to `Panel/` (override with `CORVUS_BUILD_SCRIPT`)
 
 `CORVUS_BUILDER` forces the CLI backend even on Windows.

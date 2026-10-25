@@ -14,6 +14,21 @@
             <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #aa3333;">{{.offlineDevices}}</p>
         </div>
         <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; font-family: 'Ubuntu Mono', monospace;">
+            <i class="stat-icon" data-lucide="pickaxe"></i>
+            <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">MINING</h3>
+            <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #00aa55;">{{.miningActive}}</p>
+        </div>
+        <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; font-family: 'Ubuntu Mono', monospace;">
+            <i class="stat-icon" data-lucide="pause"></i>
+            <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">PAUSED</h3>
+            <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #d9a441;">{{.miningPaused}}</p>
+        </div>
+        <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; font-family: 'Ubuntu Mono', monospace;">
+            <i class="stat-icon" data-lucide="triangle-alert"></i>
+            <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">MINING ERR</h3>
+            <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #aa3333;">{{.miningError}}</p>
+        </div>
+        <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; font-family: 'Ubuntu Mono', monospace;">
             <i class="stat-icon" data-lucide="clock-3"></i>
             <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">NEW 24H</h3>
             <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #b3b3b3;">{{.new24h}}</p>
@@ -22,6 +37,11 @@
             <i class="stat-icon" data-lucide="calendar-days"></i>
             <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">NEW 7D</h3>
             <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #b3b3b3;">{{.new7d}}</p>
+        </div>
+        <div class="stat-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; font-family: 'Ubuntu Mono', monospace;">
+            <i class="stat-icon" data-lucide="calendar-range"></i>
+            <h3 style="font-size: 0.75em; margin: 0; line-height: 1.2; overflow: visible; text-overflow: ellipsis; color: #aa0000; letter-spacing: 1px; font-family: 'Ubuntu Mono', monospace;">NEW 30D</h3>
+            <p style="font-size: 2em; margin: 8px 0 0 0; overflow: hidden; font-weight: bold; color: #b3b3b3;">{{.new30d}}</p>
         </div>
     </div>
 
@@ -36,6 +56,7 @@
                     <th>CPU</th>
                     <th>GPU</th>
                     <th>Status</th>
+                    <th>Mining</th>
                 </tr>
             </thead>
             <tbody>
@@ -46,6 +67,7 @@
                     <td>{{.CPUName}}</td>
                     <td>{{.GPUName}}</td>
                     <td><span class="status {{.Status}}">{{.Status}}</span></td>
+                    <td><span class="status {{.MiningStatus}}" title="CPU: {{.CPUMiningStatus}} · GPU: {{.GPUMiningStatus}}">{{.MiningStatus}}</span></td>
                 </tr>
                 {{end}}
             </tbody>

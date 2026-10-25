@@ -1,0 +1,299 @@
+{{define "content"}}
+<div class="proxy-page">
+    <h2 class="page-title"><i data-lucide="network"></i>XMRig Proxy</h2>
+
+    <div id="binaryWarning" style="display: {{if .status.BinaryOK}}none{{else}}block{{end}}; background-color: #3a1a1a; border-left: 4px solid #d9534f; padding: 12px 16px; margin-bottom: 20px; color: #e0e0e0; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+        <strong>xmrig-proxy binary not found.</strong> Drop <code id="expectedName">xmrig-proxy</code> in one of these locations, or set <code>CORVUS_PROXY_BIN</code>:
+        <ul style="margin: 8px 0 0 18px;">
+            {{range .status.Expected}}<li><code>{{.}}</code></li>{{end}}
+        </ul>
+    </div>
+
+    <div id="orphanWarning" style="display: {{if .status.OrphanPID}}block{{else}}none{{end}}; background-color: #3a2e1a; border-left: 4px solid #d9a441; padding: 12px 16px; margin-bottom: 20px; color: #e0e0e0; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+        <strong>A proxy from a previous panel instance is still running</strong> (pid <span id="orphanPid">{{.status.OrphanPID}}</span>).
+        The panel cannot manage it, so mining through it may continue with stale settings. Press <em>Stop proxy</em> to terminate it.
+    </div>
+
+    <div class="config-section" style="max-width: 900px; font-family: 'Ubuntu Mono', monospace;">
+        <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin-top: 0;">Status</h3>
+
+        <div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap;">
+            <span id="proxyBadge" class="status {{if .status.Running}}online{{else}}offline{{end}}" style="font-size: 1em; padding: 4px 10px;">
+                {{if .status.Running}}RUNNING{{else}}STOPPED{{end}}
+            </span>
+            <span style="color: #b3b3b3;">PID: <strong id="proxyPid">{{if .status.Running}}{{.status.PID}}{{else}}—{{end}}</strong></span>
+            <span style="color: #b3b3b3;">Uptime: <strong id="proxyUptime">{{if .status.Running}}{{.status.UptimeSec}}s{{else}}—{{end}}</strong></span>
+        </div>
+
+        <p style="color: #666; font-size: 0.85em; margin: 12px 0 0 0;">
+            Binary: <code id="proxyBinary">{{if .status.Binary}}{{.status.Binary}}{{else}}not found{{end}}</code>
+        </p>
+        <p id="proxyLastExit" style="color: #888; font-size: 0.85em; margin: 6px 0 0 0; display: {{if .status.LastExit}}block{{else}}none{{end}};">
+            Last exit: <span>{{.status.LastExit}}</span>
+        </p>
+        <p id="proxyRestarts" style="color: #888; font-size: 0.85em; margin: 6px 0 0 0; display: none;">
+            Automatic restarts: <span>0</span>
+        </p>
+    </div>
+
+    <div class="config-section" style="max-width: 900px; margin-top: 20px; font-family: 'Ubuntu Mono', monospace;">
+        <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin-top: 0;">Configuration</h3>
+
+        <form id="proxyForm">
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label style="color: #b3b3b3; display: block; margin-bottom: 5px;">Pools <small style="color: #666;">(upstream endpoints, tried in order; tick TLS per pool)</small></label>
+                <div id="poolRows">
+                    {{range .status.Settings.Pools}}
+                    <div class="pool-row" style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
+                        <input type="text" class="pool-url" value="{{.URL}}" placeholder="pool.example.com:3333" style="flex: 1; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+                        <label style="display: flex; align-items: center; gap: 6px; color: #b3b3b3; white-space: nowrap; cursor: pointer;">
+                            <input type="checkbox" class="pool-tls" {{if .TLS}}checked{{end}}> TLS
+                        </label>
+                        <button type="button" class="btn btn-danger btn-sm pool-remove" title="Remove pool">&times;</button>
+                    </div>
+                    {{end}}
+                </div>
+                <button type="button" id="addPoolBtn" class="btn btn-secondary btn-sm" style="margin-top: 4px;"><i data-lucide="plus"></i>Add pool</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group">
+                    <label for="wallet" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Wallet / user</label>
+                    <input type="text" id="wallet" required value="{{.status.Settings.Wallet}}" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+                </div>
+                <div class="form-group">
+                    <label for="password" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Pool password <small style="color: #666;">(optional)</small></label>
+                    <input type="text" id="password" value="{{.status.Settings.Password}}" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div class="form-group">
+                    <label for="bind" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Bind address <small style="color: #666;">(miners connect here)</small></label>
+                    <input type="text" id="bind" required value="{{.status.Settings.Bind}}" placeholder="0.0.0.0:3333" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+                </div>
+                <div class="form-group">
+                    <label for="algo" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Algorithm <small style="color: #666;">(optional)</small></label>
+                    <input type="text" id="algo" value="{{.status.Settings.Algo}}" placeholder="rx/0" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label for="extraArgs" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Extra arguments <small style="color: #666;">(optional, e.g. --http-host 127.0.0.1 --http-port 8081)</small></label>
+                <input type="text" id="extraArgs" value="{{.status.Settings.ExtraArgs}}" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 12px; margin-top: 16px;">
+                <button type="submit" id="startBtn" class="btn btn-primary" {{if or .status.Running (not .status.BinaryOK)}}disabled{{end}}>
+                    <i data-lucide="play"></i>Start proxy
+                </button>
+                <button type="button" id="stopBtn" class="btn btn-danger" {{if not .status.Running}}disabled{{end}}>
+                    <i data-lucide="square"></i>Stop proxy
+                </button>
+                <span id="proxyMessage" style="font-size: 0.9em; display: none; padding: 4px 8px;"></span>
+            </div>
+        </form>
+    </div>
+
+    <div class="config-section" style="max-width: 1100px; margin-top: 20px; font-family: 'Ubuntu Mono', monospace;">
+        <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin-top: 0;">Output</h3>
+        <pre id="proxyLog" style="margin: 0; max-height: 320px; overflow: auto; background-color: #1a1a1a; border: 1px solid #440000; padding: 10px; color: #b3b3b3; font-size: 0.8em; white-space: pre-wrap;">{{range .status.Log}}{{.}}
+{{end}}</pre>
+    </div>
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById('proxyForm');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const badge = document.getElementById('proxyBadge');
+    const pidEl = document.getElementById('proxyPid');
+    const uptimeEl = document.getElementById('proxyUptime');
+    const binaryEl = document.getElementById('proxyBinary');
+    const warningEl = document.getElementById('binaryWarning');
+    const lastExitEl = document.getElementById('proxyLastExit');
+    const logEl = document.getElementById('proxyLog');
+    const messageEl = document.getElementById('proxyMessage');
+    const orphanWarning = document.getElementById('orphanWarning');
+    const orphanPidEl = document.getElementById('orphanPid');
+    const restartsEl = document.getElementById('proxyRestarts');
+
+
+    function showMessage(text, ok) {
+        messageEl.textContent = text;
+        messageEl.style.display = 'block';
+        messageEl.style.backgroundColor = ok ? '#1a3a1a' : '#3a1a1a';
+        messageEl.style.color = ok ? '#5cb85c' : '#d9534f';
+        messageEl.style.borderLeft = '4px solid ' + (ok ? '#5cb85c' : '#d9534f');
+    }
+
+    function formatUptime(totalSeconds) {
+        if (!totalSeconds || totalSeconds < 0) return '—';
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        const s = totalSeconds % 60;
+        if (h > 0) return h + 'h ' + m + 'm ' + s + 's';
+        if (m > 0) return m + 'm ' + s + 's';
+        return s + 's';
+    }
+
+    function render(status) {
+        badge.textContent = status.running ? 'RUNNING' : 'STOPPED';
+        badge.className = 'status ' + (status.running ? 'online' : 'offline');
+        badge.style.fontSize = '1em';
+        badge.style.padding = '4px 10px';
+
+        pidEl.textContent = status.running ? status.pid : '—';
+        uptimeEl.textContent = status.running ? formatUptime(status.uptime_seconds) : '—';
+        binaryEl.textContent = status.binary || 'not found';
+
+        warningEl.style.display = status.binary_ok ? 'none' : 'block';
+        if (status.expected_paths && status.expected_paths.length) {
+            warningEl.querySelectorAll('code')[0].textContent = status.expected_paths[0];
+        }
+
+        if (status.last_exit) {
+            lastExitEl.style.display = 'block';
+            lastExitEl.querySelector('span').textContent = status.last_exit;
+        } else {
+            lastExitEl.style.display = 'none';
+        }
+
+        const orphan = status.orphan_pid || 0;
+        orphanWarning.style.display = orphan ? 'block' : 'none';
+        orphanPidEl.textContent = orphan || '';
+
+        // Stop is also available for an orphan, since that is the only way to
+        // get the panel back in control of the running proxy.
+        startBtn.disabled = status.running || orphan !== 0 || !status.binary_ok;
+        stopBtn.disabled = !status.running && orphan === 0;
+
+        if (status.restart_count > 0 || status.restart_pending) {
+            restartsEl.style.display = 'block';
+            let text = status.restart_count + ' (attempt ' + status.restart_count + '/8)';
+            if (status.restart_pending) {
+                text += ' — next attempt in ' + status.next_restart_seconds + 's';
+            }
+            restartsEl.querySelector('span').textContent = text;
+        } else {
+            restartsEl.style.display = 'none';
+        }
+
+        logEl.textContent = (status.log || []).join('\n');
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function refresh() {
+        try {
+            const res = await fetch('/api/proxy/status');
+            if (res.ok) render(await res.json());
+        } catch (err) {
+            console.error('proxy status:', err);
+        }
+    }
+
+    async function post(url, body) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: body ? { 'Content-Type': 'application/json' } : {},
+            body: body ? JSON.stringify(body) : null
+        });
+        let data = null;
+        try { data = await res.json(); } catch (err) { /* ignore */ }
+        if (!res.ok) {
+            throw new Error((data && data.error) || ('HTTP ' + res.status));
+        }
+        return data;
+    }
+
+    const poolRows = document.getElementById('poolRows');
+    const addPoolBtn = document.getElementById('addPoolBtn');
+
+    function addPoolRow(url, tls) {
+        const row = document.createElement('div');
+        row.className = 'pool-row';
+        row.style.cssText = 'display:flex; gap:10px; align-items:center; margin-bottom:8px;';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'pool-url';
+        input.placeholder = 'pool.example.com:3333';
+        input.value = url || '';
+        input.style.cssText = "flex:1; padding:6px; background-color:#262626; color:#b3b3b3; border:2px solid #440000; font-family:'Ubuntu Mono', monospace; font-size:0.9em;";
+
+        const label = document.createElement('label');
+        label.style.cssText = 'display:flex; align-items:center; gap:6px; color:#b3b3b3; white-space:nowrap; cursor:pointer;';
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.className = 'pool-tls';
+        check.checked = !!tls;
+        label.appendChild(check);
+        label.appendChild(document.createTextNode('TLS'));
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn btn-danger btn-sm pool-remove';
+        remove.title = 'Remove pool';
+        remove.innerHTML = '&times;';
+
+        row.appendChild(input);
+        row.appendChild(label);
+        row.appendChild(remove);
+        poolRows.appendChild(row);
+        return row;
+    }
+
+    addPoolBtn.addEventListener('click', function () {
+        addPoolRow('', false).querySelector('.pool-url').focus();
+    });
+
+    poolRows.addEventListener('click', function (e) {
+        const btn = e.target.closest('.pool-remove');
+        if (btn) btn.closest('.pool-row').remove();
+    });
+
+    if (!poolRows.children.length) addPoolRow('', false);
+
+    form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        startBtn.disabled = true;
+        try {
+            const data = await post('/api/proxy/start', {
+                pools: Array.from(document.querySelectorAll('.pool-row')).map(function (row) {
+                    return {
+                        url: row.querySelector('.pool-url').value.trim(),
+                        tls: row.querySelector('.pool-tls').checked
+                    };
+                }).filter(function (pool) { return pool.url !== ''; }),
+                wallet: document.getElementById('wallet').value,
+                password: document.getElementById('password').value,
+                bind: document.getElementById('bind').value,
+                algo: document.getElementById('algo').value,
+                extra_args: document.getElementById('extraArgs').value
+            });
+            render(data);
+            showMessage('Proxy started (pid ' + data.pid + ')', true);
+        } catch (err) {
+            showMessage('Could not start proxy: ' + err.message, false);
+            startBtn.disabled = false;
+        }
+    });
+
+    stopBtn.addEventListener('click', async function () {
+        if (!confirm('Stop the XMRig proxy?')) return;
+        stopBtn.disabled = true;
+        try {
+            const data = await post('/api/proxy/stop');
+            render(data);
+            showMessage('Proxy stopped', true);
+        } catch (err) {
+            showMessage('Could not stop proxy: ' + err.message, false);
+            stopBtn.disabled = false;
+        }
+    });
+
+    setInterval(refresh, 3000);
+})();
+</script>
+{{end}}

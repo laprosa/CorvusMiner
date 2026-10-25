@@ -9,7 +9,7 @@
         <form id="uploadForm" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 15px;">
             <div class="form-group">
                 <label style="color: #b3b3b3; display: block; margin-bottom: 8px; font-weight: bold;">Version Number:</label>
-                <input type="text" id="versionInput" placeholder="e.g., 2.3.0" pattern="^\d+\.\d+\.\d+$" required style="
+                <input type="text" id="versionInput" placeholder="e.g., 3.3" pattern="^\d+\.\d+(\.\d+)?$" required style="
                     width: 100%;
                     padding: 8px;
                     background-color: #262626;
@@ -19,7 +19,7 @@
                     font-size: 0.95em;
                     box-sizing: border-box;
                 ">
-                <small style="color: #888; margin-top: 5px; display: block;">Format: major.minor.patch (e.g., 2.3.0)</small>
+                <small style="color: #888; margin-top: 5px; display: block;">Format: major.minor or major.minor.patch (e.g., 3.3 or 3.3.1)</small>
             </div>
 
             <div class="form-group">
@@ -100,9 +100,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const setCurrentCheckbox = document.getElementById('setCurrentCheckbox');
 
         // Validate version format
-        const versionRegex = /^\d+\.\d+\.\d+$/;
+        const versionRegex = /^\d+\.\d+(\.\d+)?$/;
         if (!versionRegex.test(versionInput.value)) {
-            showStatus('Invalid version format. Use: major.minor.patch (e.g., 2.3.0)', 'error');
+            showStatus('Invalid version format. Use: major.minor or major.minor.patch (e.g., 3.3)', 'error');
             return;
         }
 

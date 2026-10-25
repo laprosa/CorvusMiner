@@ -917,6 +917,30 @@ textarea:focus-visible {
 .status.offline::before,
 .status.error::before { background: var(--danger); }
 
+/* Mining state badges (independent of the online/offline device status) */
+.status.active {
+    color: #4dcc8d;
+    background: rgba(0, 170, 85, 0.13);
+}
+
+.status.active::before { background: var(--success); box-shadow: 0 0 7px var(--success); }
+
+.status.paused {
+    color: #d9a441;
+    background: rgba(217, 164, 65, 0.14);
+}
+
+.status.paused::before { background: #d9a441; }
+
+.status.disabled,
+.status.unknown {
+    color: #8a8a8a;
+    background: rgba(138, 138, 138, 0.13);
+}
+
+.status.disabled::before,
+.status.unknown::before { background: #8a8a8a; }
+
 .btn,
 .copy-btn {
     display: inline-flex;

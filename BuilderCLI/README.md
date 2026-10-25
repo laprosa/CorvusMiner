@@ -20,6 +20,19 @@ JSON file) so the panel can drive builds without a GUI.
 | Go 1.21+ | Build the builder itself | `sudo apt install golang-go` |
 | CMake 3.10+ | Configure the client | `sudo apt install cmake` |
 | MinGW-w64 | Cross compiler (`x86_64-w64-mingw32-*`) | `sudo apt install mingw-w64` |
+| GNU make | CMake's default generator | `sudo apt install build-essential` |
+| Python 3 | Post-link PE string patcher | `sudo apt install python3` |
+
+One-shot setup (apt/dnf/yum/pacman/zypper/apk, skips what is already present):
+
+```bash
+./install-deps.sh            # install missing packages
+./install-deps.sh --check    # report only, install nothing
+./install-deps.sh --build    # install, then produce ../builder
+```
+
+On Windows the panel uses `Builder/build.ps1` instead; run `Builder/install-deps.ps1`
+once to get the same toolchain (`-Check` to verify, `-Build` to also emit `builder.exe`).
 
 ## Build the builder
 
@@ -61,7 +74,7 @@ At least one of `-panel-urls`, `-config-url` or `-contract-address` is required.
 | `-panel-urls <urls>` | Comma-separated panel submit URLs (POST config mode). Also used for remote miner downloads and updates. |
 | `-config-url <urls>` | Comma-separated GET config URLs. Switches the client to GET config mode. Cannot be combined with `-contract-address`. |
 | `-contract-address <0x...>` | TextStorage contract address; the client reads the panel URL from the chain at startup. |
-| `-embedded-config <path\|auto\|none>` | JSON embedded as an offline fallback. `auto` (default) uses `embedded_config.json` at the repo root, `Client/resources/embedded_config.json`, or the parent directory, whichever exists first. `none` disables it. |
+| `-embedded-config <path\|auto\|none>` | JSON embedded as an offline fallback. The panel passes an explicit temp file it generates from its stored setting (or `none`). `auto` (default when run by hand) uses `embedded_config.json` at the repo root, `Client/resources/embedded_config.json`, or the parent directory, whichever exists first. |
 | `-config <file\|->` | Read all settings from a JSON file (`-` = stdin). Explicitly passed flags override the file. |
 
 `-panel-urls` and `-config-url` may be combined: the config method becomes GET while

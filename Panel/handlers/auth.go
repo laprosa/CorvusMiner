@@ -1,10 +1,22 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+// loginLimiter returns the brute-force limiter (nil when a Handler was built
+// without one, e.g. in tests that only need the page handlers).
+func (h *Handler) loginLimiter() *loginLimiter { return h.logins }
+
+func (h *Handler) recordLoginFailure(key string) {
+	if limiter := h.loginLimiter(); limiter != nil {
+		limiter.Fail(key)
+	}
+}
 
 // Register handles user registration
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +35,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Render register page
-		h.renderTemplate(w, "register.html", nil)
+		h.renderTemplate(w, "register.html", map[string]interface{}{"quote": getRandomQuote()})
 		return
 	}
 
@@ -93,7 +105,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Render login page
-		h.renderTemplate(w, "login.html", nil)
+		h.renderTemplate(w, "login.html", map[string]interface{}{"quote": getRandomQuote()})
 		return
 	}
 
@@ -111,6 +123,19 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Throttle brute force: only count attempts that reach the credential check.
+	key := loginKey(r, username)
+	if limiter := h.loginLimiter(); limiter != nil {
+		if allowed, retryAfter := limiter.Allow(key); !allowed {
+			seconds := int(retryAfter.Seconds()) + 1
+			w.Header().Set("Retry-After", strconv.Itoa(seconds))
+			http.Error(w,
+				fmt.Sprintf("Too many failed sign-in attempts. Try again in %d seconds.", seconds),
+				http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	// Get user from database
 	user, err := h.db.GetUserByUsername(username)
 	if err != nil {
@@ -119,6 +144,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user == nil {
+		h.recordLoginFailure(key)
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
@@ -126,8 +152,13 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	// Verify password
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	if err != nil {
+		h.recordLoginFailure(key)
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
+	}
+
+	if limiter := h.loginLimiter(); limiter != nil {
+		limiter.Reset(key)
 	}
 
 	// Create session
